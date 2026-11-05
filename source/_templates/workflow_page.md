@@ -75,6 +75,13 @@ This visualization of the workflow's rule graph was automatically generated usin
 
 ## Deployment
 
+:::{admonition} Deploy and configure in your browser
+:class: tip
+{bdg-link-primary}`Open the deploy app <{{ wf["webapp_url"] }}>` — sign in with
+GitHub, pick a target repository, configure the workflow, and push. No
+installation needed.
+:::
+
 :::{dropdown} Step 1: Install Snakemake and Snakedeploy
 
 Snakemake and Snakedeploy are best installed _via_ the [Conda](https://conda.io) package manager. It is recommended to install conda _via_ [Miniforge](https://github.com/conda-forge/miniforge). Run

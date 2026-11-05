@@ -2,7 +2,7 @@
 authors = ["Johannes Koester <johannes.koester@uni-due.de>"]
 channels = ["conda-forge", "bioconda"]
 name = "snakemake-workflow-catalog"
-platforms = ["linux-64","osx-arm64"]
+platforms = ["linux-64", "osx-arm64"]
 version = "0.1.0"
 
 [dependencies]
@@ -45,4 +45,16 @@ test-generate-catalog-single-repo = { cmd = "python scripts/generate-catalog.py"
 test-cleanup-catalog = { cmd = "python scripts/cleanup-catalog.py", env = { OFFSET = "0", N_REPOS = "3" } }
 generate-catalog = { cmd = "python scripts/generate-catalog.py" }
 cleanup-catalog = { cmd = "python scripts/cleanup-catalog.py" }
-render-catalog = "sphinx-build source build/html"
+render-catalog = "python scripts/build-webapp.py && sphinx-build source build/html"
+
+[feature.webapp.dependencies]
+python = ">=3.13,<3.14"
+streamlit = ">=1.40,<2"
+pyyaml = ">=6,<7"
+jsonschema = ">=4,<5"
+
+[feature.webapp.tasks]
+test-webapp-ui = "python -m unittest discover -s webapp/tests_ui -v"
+
+[environments]
+webapp = { features = ["webapp"], no-default-feature = true }

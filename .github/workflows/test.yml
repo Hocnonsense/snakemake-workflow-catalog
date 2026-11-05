@@ -44,3 +44,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pixi run test-cleanup-catalog
+
+  webapp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: prefix-dev/setup-pixi@v0
+        with:
+          cache: true
+
+      - name: test-webapp-ui
+        run: pixi run -e webapp test-webapp-ui

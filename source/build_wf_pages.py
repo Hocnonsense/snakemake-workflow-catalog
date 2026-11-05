@@ -1,5 +1,6 @@
 import json
 import re
+import urllib.parse
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from datetime import datetime
 from pathlib import Path
@@ -200,6 +201,12 @@ def build_wf_pages():
         wf_data["linting"] = check_qc_output(repo["linting"])
         wf_data["formatting"] = check_qc_output(repo["formatting"])
         wf_data["release"] = repo["latest_release"]
+        query = "?repo=" + urllib.parse.quote(current_repo, safe="/")
+        if repo.get("latest_release"):
+            query += "&ref=" + urllib.parse.quote(repo["latest_release"], safe="")
+        # The page is rendered to build/html/docs/workflows/<owner>/<repo>.html,
+        # so three levels up reach build/html/_static/webapp/.
+        wf_data["webapp_url"] = "../../../_static/webapp/" + query
         wf_data["rulegraph"] = plots
         last_update = datetime.fromtimestamp(repo["updated_at"])
         wf_data["last_update"] = datetime.strftime(last_update, "%Y-%m-%d")
