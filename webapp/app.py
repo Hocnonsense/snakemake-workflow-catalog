@@ -13,6 +13,8 @@ import json
 import streamlit as st
 
 from catalog_webapp.auth import render_auth
+from catalog_webapp.github import GitHub
+from snakelit.version_picker import version_picker
 
 st.set_page_config(page_title="Deploy a Snakemake workflow", layout="wide")
 
@@ -30,20 +32,23 @@ bootstrap = _bootstrap()
 repo = bootstrap.get("repo", "")
 ref = bootstrap.get("ref", "")
 
-st.title("Deploy a Snakemake workflow")
+if repo:
+    st.title(f"Deploy workflow: [`{repo}`](https://github.com/{repo})")
+else:
+    st.error(
+        "No workflow repository was passed in the URL (?repo=owner/name). "
+        "Please access the app through the "
+        "[catalog](https://snakemake.github.io/snakemake-workflow-catalog/)"
+    )
+    st.stop()
+
 
 with st.sidebar:
-    gh_token = render_auth()
+    gh = GitHub(render_auth())
 
-if repo:
-    st.markdown(f"**Workflow:** [`{repo}`](https://github.com/{repo})")
-else:
-    st.warning("No workflow repository was passed in the URL (?repo=owner/name).")
 
+auth = "auth" if gh.token else "anon"
+ref = version_picker(ref, gh.repo_ref_cache(repo), key=f"ref-picker-{repo}-{auth}")
 if ref:
-    st.markdown(f"**Tag / ref:** `{ref}`")
-else:
-    st.info("No tag was passed in the URL (?ref=...).")
-
-st.divider()
-st.caption("Minimal build: deployment and configuration are not wired yet.")
+    sha = f" (`{ref.sha[:7]}`)" if ref.sha else ""
+    st.caption(f"Selected: `{ref.kind}={ref.name}`{sha}")

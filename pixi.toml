@@ -52,9 +52,11 @@ python = ">=3.13,<3.14"
 streamlit = ">=1.40,<2"
 pyyaml = ">=6,<7"
 jsonschema = ">=4,<5"
+pytest = ">=8,<9"
 
 [feature.webapp.tasks]
-test-webapp-ui = "python -m unittest discover -s webapp/tests_ui -v"
+test-webapp = "pytest webapp/tests -v"
+test-webapp-ui = "pytest webapp/tests_ui -v"
 
 [environments]
 webapp = { features = ["webapp"], no-default-feature = true }

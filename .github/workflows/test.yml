@@ -54,5 +54,8 @@ jobs:
         with:
           cache: true
 
+      - name: test-webapp
+        run: pixi run -e webapp test-webapp
+
       - name: test-webapp-ui
         run: pixi run -e webapp test-webapp-ui
