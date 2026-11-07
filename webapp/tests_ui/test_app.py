@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -31,8 +32,23 @@ def _load(kind):
     return iter([])
 
 
-@pytest.fixture
-def app(tmp_path, monkeypatch):
+FILES = {
+    "workflow/Snakefile": b"rule all:\n    pass\n",
+    "config/config.yaml": b"samples: samples.tsv\nx: 1\n",
+    "workflow/schemas/config.schema.yaml": (
+        b"type: object\n"
+        b"required: [samples]\n"
+        b"properties:\n"
+        b"  samples:\n"
+        b"    type: string\n"
+        b"  x:\n"
+        b"    type: integer\n"
+    ),
+    "LICENSE": b"MIT\n",
+}
+
+
+def _start(tmp_path, monkeypatch, files):
     (tmp_path / "bootstrap.json").write_text(
         json.dumps({"repo": "owner/wf", "ref": "v1.0"}), encoding="utf-8"
     )
@@ -42,26 +58,30 @@ def app(tmp_path, monkeypatch):
         GitHub,
         "get_tree",
         lambda self, repo, ref: {
-            "tree": [
-                {"path": "workflow/Snakefile", "type": "blob"},
-                {"path": "config/config.yaml", "type": "blob"},
-                {"path": "LICENSE", "type": "blob"},
-            ]
+            "tree": [{"path": path, "type": "blob"} for path in files]
         },
     )
     monkeypatch.setattr(
         GitHub,
         "fetch_files",
-        lambda self, repo, ref, files: {
-            "workflow/Snakefile": b"rule all:\n    pass\n",
-            "config/config.yaml": b"x: 1\n",
-            "LICENSE": b"MIT\n",
-        },
+        lambda self, repo, ref, paths: {path: files[path] for path in paths},
     )
 
     at = AppTest.from_file(str(APP), default_timeout=60)
     at.run()
     return at
+
+
+@pytest.fixture
+def app(tmp_path, monkeypatch):
+    return _start(tmp_path, monkeypatch, FILES)
+
+
+@pytest.fixture
+def app_with_broken_config(tmp_path, monkeypatch):
+    files = dict(FILES)
+    files["config/config.yaml"] = b"samples: [\n"
+    return _start(tmp_path, monkeypatch, files)
 
 
 def test_shows_repo_and_ref(app):
@@ -114,3 +134,37 @@ def test_deploy_lists_downloaded_files(app):
     app.button(key=workflow_dir).click()
     app.run()
     assert "Snakefile" in [item.label for item in app.button]
+
+
+def test_deploy_selects_the_upstream_schema(app):
+    next(item for item in app.button if item.label == "Deploy").click()
+    app.run()
+
+    selector = next(
+        item for item in app.selectbox if item.key and item.key.endswith("-schema")
+    )
+    assert selector.value == "workflow/schemas/config.schema.yaml"
+
+
+def test_editing_config_writes_an_override(app):
+    next(item for item in app.button if item.label == "Deploy").click()
+    app.run()
+
+    samples = next(
+        item for item in app.text_input if item.key and item.key.endswith("-samples")
+    )
+    samples.set_value("other.tsv")
+    app.run()
+
+    deployment = app.session_state["deploy-result"]["deployment"]
+    assert yaml.safe_load(deployment["config/config.yaml"])["samples"] == "other.tsv"
+
+
+def test_broken_config_is_reported(app_with_broken_config):
+    next(
+        item for item in app_with_broken_config.button if item.label == "Deploy"
+    ).click()
+    app_with_broken_config.run()
+
+    assert not app_with_broken_config.exception
+    assert app_with_broken_config.error

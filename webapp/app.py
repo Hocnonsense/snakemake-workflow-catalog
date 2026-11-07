@@ -1,6 +1,6 @@
-"""stlite app: pick a workflow ref, deploy it, and list the downloaded files.
+"""stlite app: pick a workflow ref, deploy it, edit its configuration.
 
-Configuration and publishing are the next phases in ``BROWSER_DEPLOY_PLAN.md``.
+Publishing is the next phase in ``BROWSER_DEPLOY_PLAN.md``.
 """
 
 from __future__ import annotations
@@ -9,12 +9,13 @@ import json
 
 import streamlit as st
 
-from catalog_webapp.auth import render_auth
-from catalog_webapp.deploy import DeployError, Deployment, deploy
-from catalog_webapp.github import GitHub, GitHubError
 from snakelit.types import Ref
 from snakelit.version_picker import version_picker
 from snakelit.file_view import file_view, File, Stat, preview_for
+from catalog_webapp.auth import render_auth
+from catalog_webapp.deploy import DeployError, Deployment, deploy
+from catalog_webapp.github import GitHub, GitHubError
+from catalog_webapp.editor import schema_dict
 
 st.set_page_config(page_title="Deploy a Snakemake workflow", layout="wide")
 
@@ -104,3 +105,9 @@ file_view(
     key=f"file-view-{result['key']}",
     header="Downloaded files",
 )
+
+errors = schema_dict(
+    deployment, deployment.config_file(), key=f"config-{result['key']}"
+)
+for message in errors:
+    st.error(message)

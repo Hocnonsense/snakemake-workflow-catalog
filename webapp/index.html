@@ -37,7 +37,7 @@
 
       mount(
         {
-          requirements: ["polars"],
+          requirements: ["polars", "pyyaml", "jsonschema"],
           entrypoint: "app.py",
           files,
           streamlitConfig: {

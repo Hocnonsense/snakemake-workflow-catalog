@@ -98,7 +98,20 @@ def test_schemas_are_kept_for_the_editor_only():
     deployment = _deploy(files)
 
     assert deployment.schemas == {
-        "config": b"type: object\n",
-        "samples": b"{}\n",
+        "workflow/schemas/config.schema.yaml": b"type: object\n",
+        "workflow/schemas/samples.schema.json": b"{}\n",
     }
+    assert deployment.schema_path("config") == "workflow/schemas/config.schema.yaml"
+    assert deployment.schema_path("samples") == "workflow/schemas/samples.schema.json"
+    assert deployment.schema_path("units") is None
     assert "workflow/schemas/config.schema.yaml" not in dict(deployment.items())
+
+
+def test_config_schemas_alternative_layout():
+    files = dict(BASE_FILES)
+    files["config/schemas/config.schema.yaml"] = b"type: object\n"
+    files["workflow/schemas/config.schema.yaml"] = b"type: object\n"
+
+    deployment = _deploy(files)
+
+    assert deployment.schema_path("config") == "workflow/schemas/config.schema.yaml"

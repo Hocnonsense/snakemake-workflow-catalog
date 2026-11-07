@@ -19,6 +19,9 @@ if TYPE_CHECKING:
 
 SNAKEDEPLOY_COMPAT = "0.11.0"
 
+# The catalog documents both layouts, ``workflow/schemas/`` first.
+_SCHEMA_PREFIXES = ("workflow/schemas/", "config/schemas/")
+
 _SNAKEFILE_TEMPLATE = """{comment}
 from snakemake.utils import min_version
 
@@ -79,12 +82,20 @@ class Deployment:
 
     def set_schemas(self, schemas: Mapping[str, bytes]):
         """Keep the upstream JSON schemas for the editor, not for the repo."""
-        for path, content in schemas.items():
+        for path in sorted(schemas):  # later wins, so prefer workflow/schemas/
             name = path.rsplit("/", 1)[-1]
             base, _, ext = name.rpartition(".schema.")
             if not base or ext not in ("yaml", "yml", "json"):
                 continue
-            self.schemas[base] = content
+            self.schemas[path] = schemas[path]
+
+    def schema_path(self, item: str = "config"):
+        """Return the schema registered for ``item``, if any."""
+        for prefix in _SCHEMA_PREFIXES:
+            for ext in ("yaml", "yml", "json"):
+                path = f"{prefix}{item}.schema.{ext}"
+                if path in self.schemas:
+                    return path
 
     def items(self):
         yield from self.overrides.items()
@@ -172,7 +183,7 @@ def _schemas(tree):
         if entry.get("type") != "blob":
             continue
         path: str = entry["path"]
-        if path.startswith("workflow/schemas/"):
+        if path.startswith(_SCHEMA_PREFIXES):
             yield path
 
 
