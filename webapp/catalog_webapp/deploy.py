@@ -10,7 +10,6 @@ The output must stay compatible with snakedeploy 0.11.x, see
 
 from __future__ import annotations
 
-from types import MappingProxyType
 from typing import Mapping, TYPE_CHECKING
 
 from snakelit.types import Ref
@@ -53,16 +52,8 @@ class Deployment:
     def __init__(self, downloaded: Mapping[str, bytes]):
         if not downloaded:
             raise DeployError("The source tree is empty.")
-        self.schemas = {
-            path: content
-            for path, content in downloaded.items()
-            if path.startswith("workflow/schemas/")
-        }
-        self.downloaded = {
-            path: content
-            for path, content in downloaded.items()
-            if path not in self.schemas
-        }
+        self.downloaded = downloaded
+        self.schemas: dict[str, bytes] = {}
         self.overrides: dict[str, bytes] = {}
 
     def config_file(self):
@@ -85,6 +76,15 @@ class Deployment:
             snakefile=_module_declaration(repo, ref, snakefile),
         )
         self.overrides["workflow/Snakefile"] = snakefile.encode("utf-8")
+
+    def set_schemas(self, schemas: Mapping[str, bytes]):
+        """Keep the upstream JSON schemas for the editor, not for the repo."""
+        for path, content in schemas.items():
+            name = path.rsplit("/", 1)[-1]
+            base, _, ext = name.rpartition(".schema.")
+            if not base or ext not in ("yaml", "yml", "json"):
+                continue
+            self.schemas[base] = content
 
     def items(self):
         yield from self.overrides.items()
@@ -155,7 +155,7 @@ def _wanted(tree):
         if entry.get("type") != "blob":
             continue
         path: str = entry["path"]
-        if path.startswith(("config/", "profiles/", "workflow/schemas/")):
+        if path.startswith(("config/", "profiles/")):
             yield path
         elif path in ("workflow/Snakefile", "Snakefile"):
             yield path
@@ -166,10 +166,21 @@ def _wanted(tree):
                     yield path
 
 
+def _schemas(tree):
+    """The upstream JSON schemas; they feed the editor, not the deployment."""
+    for entry in tree:
+        if entry.get("type") != "blob":
+            continue
+        path: str = entry["path"]
+        if path.startswith("workflow/schemas/"):
+            yield path
+
+
 def deploy(repo: str, ref: Ref, gh: "GitHub"):
     """Fetch ``ref`` and return the destination files of a deployment."""
     ref_name = ref.sha or ref.name
     tree = gh.get_tree(repo, ref_name)["tree"]
     files = Deployment(gh.fetch_files(repo, ref_name, _wanted(tree)))
+    files.set_schemas(gh.fetch_files(repo, ref_name, _schemas(tree)))
     files.set_snakefile(repo, ref, _source_snakefile(tree))
     return files
