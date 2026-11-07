@@ -87,3 +87,18 @@ def test_snakefile_records_ref_and_commit():
     assert 'github("a/b", path="workflow/Snakefile", tag="v1")' in snakefile
     assert "# deployed from a/b at tag v1 (commit sha1)" in snakefile
     assert "module b:" in snakefile
+
+
+def test_schemas_are_kept_for_the_editor_only():
+    files = dict(BASE_FILES)
+    files["workflow/schemas/config.schema.yaml"] = b"type: object\n"
+    files["workflow/schemas/samples.schema.json"] = b"{}\n"
+    files["workflow/schemas/README.md"] = b"not a schema\n"
+
+    deployment = _deploy(files)
+
+    assert deployment.schemas == {
+        "config": b"type: object\n",
+        "samples": b"{}\n",
+    }
+    assert "workflow/schemas/config.schema.yaml" not in dict(deployment.items())
