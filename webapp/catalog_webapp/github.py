@@ -92,18 +92,20 @@ class GitHub:
         url: str,
         payload: Mapping | None = None,
         accept="application/vnd.github+json",
+        api: bool = True,
     ):
         data = None
         if payload is not None:
             data = json.dumps(payload).encode("utf-8")
         request = urllib.request.Request(url, data=data, method=method)
         request.add_header("Accept", accept)
-        request.add_header("X-GitHub-Api-Version", "2022-11-28")
-        request.add_header("User-Agent", USER_AGENT)
-        if data is not None:
-            request.add_header("Content-Type", "application/json")
-        if self.token:
-            request.add_header("Authorization", f"Bearer {self.token}")
+        if api:
+            request.add_header("X-GitHub-Api-Version", "2022-11-28")
+            request.add_header("User-Agent", USER_AGENT)
+            if data is not None:
+                request.add_header("Content-Type", "application/json")
+            if self.token:
+                request.add_header("Authorization", f"Bearer {self.token}")
         try:
             response = urllib.request.urlopen(request, timeout=60)
         except urllib.error.HTTPError as error:
@@ -113,6 +115,8 @@ class GitHub:
             except (json.JSONDecodeError, AttributeError):
                 message = body
             raise GitHubError(error.code, message) from error
+        except Exception as error:  # pyodide-http raises JsException on network errors
+            raise GitHubError(0, str(error)) from error
         status = getattr(response, "status", None) or getattr(response, "code", None)
         if status and status >= 400:
             body = response.read().decode("utf-8", errors="replace")
@@ -130,8 +134,9 @@ class GitHub:
         url: str,
         payload: Mapping | None = None,
         accept="application/vnd.github+json",
+        api: bool = True,
     ):
-        with self._urlopen(method, url, payload, accept) as response:
+        with self._urlopen(method, url, payload, accept, api) as response:
             return response.read()
 
     def _request_page(self, url: str):
@@ -285,7 +290,7 @@ class GitHub:
             f"{urllib.parse.quote(path, safe='/')}"
         )
         try:
-            return self._request("GET", url, accept="*/*")
+            return self._request("GET", url, accept="*/*", api=False)
         except GitHubError as error:
             if self.token is None or error.status not in (403, 404):
                 raise
@@ -297,21 +302,8 @@ class GitHub:
         )
         return self._request("GET", url, accept="application/vnd.github.raw")
 
-    def fetch_files(
-        self,
-        owner_repo: str,
-        ref: str,
-        tree: Iterable[Mapping],
-        prefixes: Iterable[str] = (),
-    ) -> dict[str, bytes]:
-        prefixes = tuple(prefixes)
-        paths = [
-            entry["path"]
-            for entry in tree
-            if entry.get("type") == "blob"
-            and (not prefixes or entry["path"].startswith(prefixes))
-        ]
-        return {path: self.get_raw_file(owner_repo, ref, path) for path in paths}
+    def fetch_files(self, owner_repo: str, ref: str, files: Iterable[str]):
+        return {path: self.get_raw_file(owner_repo, ref, path) for path in files}
 
     # -- writes ------------------------------------------------------------
 

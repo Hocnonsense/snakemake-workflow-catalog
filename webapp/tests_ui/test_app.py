@@ -38,6 +38,26 @@ def app(tmp_path, monkeypatch):
     )
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(GitHub, "repo_ref_cache", lambda self, repo: _load)
+    monkeypatch.setattr(
+        GitHub,
+        "get_tree",
+        lambda self, repo, ref: {
+            "tree": [
+                {"path": "workflow/Snakefile", "type": "blob"},
+                {"path": "config/config.yaml", "type": "blob"},
+                {"path": "LICENSE", "type": "blob"},
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        GitHub,
+        "fetch_files",
+        lambda self, repo, ref, files: {
+            "workflow/Snakefile": b"rule all:\n    pass\n",
+            "config/config.yaml": b"x: 1\n",
+            "LICENSE": b"MIT\n",
+        },
+    )
 
     at = AppTest.from_file(str(APP), default_timeout=60)
     at.run()
@@ -48,9 +68,7 @@ def test_shows_repo_and_ref(app):
     assert not app.exception, [str(error.value) for error in app.exception]
 
     title = "\n".join(item.value for item in app.title)
-    captions = "\n".join(item.value for item in app.caption)
     assert "owner/wf" in title
-    assert "v1.0" in captions
 
     labels = [item.label for item in app.button]
     assert any(
@@ -79,3 +97,14 @@ def test_sidebar_offers_token_login(app):
     assert "Create a token" in [
         item.label for item in app.get("link_button")
     ]
+
+
+def test_deploy_lists_downloaded_files(app):
+    deploy_button = next(item for item in app.button if item.label == "Deploy")
+    deploy_button.click()
+    app.run()
+
+    assert not app.exception, [str(error.value) for error in app.exception]
+    assert "Downloaded files" in [item.value for item in app.subheader]
+    assert 'tag="v1.0"' in app.code[0].value
+    assert '(commit abc1234)' in app.code[0].value

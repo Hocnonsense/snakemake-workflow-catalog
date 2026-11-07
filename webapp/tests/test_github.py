@@ -1,12 +1,14 @@
 """GitHub client tests (no network)."""
 
 import sys
+
+import pytest
 from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from catalog_webapp.github import GitHub, _next_link  # noqa: E402
+from catalog_webapp.github import GitHub, GitHubError, _next_link  # noqa: E402
 from snakelit.types import Ref  # noqa: E402
 
 
@@ -70,7 +72,7 @@ def test_create_repo_payload():
     assert payload["auto_init"] is False
 
 
-def test_fetch_files_prefix_filter():
+def test_fetch_files_reads_given_paths():
     gh = GitHub()
     fetched = []
 
@@ -79,12 +81,7 @@ def test_fetch_files_prefix_filter():
         return path.encode()
 
     gh.get_raw_file = fake_raw
-    tree = [
-        {"path": "config/config.yaml", "type": "blob"},
-        {"path": "workflow/Snakefile", "type": "blob"},
-        {"path": "config", "type": "tree"},
-    ]
-    files = gh.fetch_files("a/b", "v1", tree, prefixes=("config/",))
+    files = gh.fetch_files("a/b", "v1", ["config/config.yaml"])
 
     assert files == {"config/config.yaml": b"config/config.yaml"}
     assert fetched == ["config/config.yaml"]
@@ -231,3 +228,35 @@ def test_graphql_tags_include_time_and_paginate():
         "direction": "DESC",
     }
     assert calls[1]["variables"]["cursor"] == "c1"
+
+
+def test_raw_file_uses_a_simple_request():
+    """raw.githubusercontent.com rejects preflight, so no GitHub API headers."""
+    gh = GitHub("token")
+    calls = []
+
+    def fake_request(method, url, payload=None, accept=None, api=True):
+        calls.append((method, url, api))
+        return b"data"
+
+    gh._request = fake_request
+    assert gh.get_raw_file("o/r", "sha1", "LICENSE") == b"data"
+    assert calls == [
+        (
+            "GET",
+            "https://raw.githubusercontent.com/o/r/sha1/LICENSE",
+            False,
+        )
+    ]
+
+
+def test_network_errors_are_wrapped(monkeypatch):
+    gh = GitHub()
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr("catalog_webapp.github.urllib.request.urlopen", boom)
+
+    with pytest.raises(GitHubError):
+        gh.current_user()
