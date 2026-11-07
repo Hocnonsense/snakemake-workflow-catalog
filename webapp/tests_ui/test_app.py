@@ -106,5 +106,11 @@ def test_deploy_lists_downloaded_files(app):
 
     assert not app.exception, [str(error.value) for error in app.exception]
     assert "Downloaded files" in [item.value for item in app.subheader]
-    assert 'tag="v1.0"' in app.code[0].value
-    assert '(commit abc1234)' in app.code[0].value
+    workflow_dir = next(
+        key
+        for key in (item.key for item in app.button)
+        if key and key.endswith("-dir-workflow/")
+    )
+    app.button(key=workflow_dir).click()
+    app.run()
+    assert "Snakefile" in [item.label for item in app.button]

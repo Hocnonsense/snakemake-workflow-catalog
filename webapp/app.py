@@ -14,6 +14,7 @@ from catalog_webapp.deploy import DeployError, Deployment, deploy
 from catalog_webapp.github import GitHub, GitHubError
 from snakelit.types import Ref
 from snakelit.version_picker import version_picker
+from snakelit.file_view import file_view, File, Stat, preview_for
 
 st.set_page_config(page_title="Deploy a Snakemake workflow", layout="wide")
 
@@ -90,17 +91,16 @@ if result["key"] != f"{repo}@{ref.sha}":
     st.stop()
 
 deployment: Deployment = result["deployment"]
-st.subheader("Downloaded files")
-st.dataframe(
-    [
-        {"path": path, "bytes": len(content)}
-        for path, content in sorted(deployment.items())
-    ],
-    hide_index=True,
-    use_container_width=True,
-)
-with st.expander("Generated workflow/Snakefile"):
-    st.code(
-        deployment.overrides["workflow/Snakefile"].decode("utf-8"),
-        language="python",
+files = {
+    path: File(
+        stat=Stat(size=len(content)),
+        preview=preview_for(path, content),
     )
+    for path, content in deployment.items()
+}
+
+file_view(
+    files,
+    key=f"file-view-{result['key']}",
+    header="Downloaded files",
+)

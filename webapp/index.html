@@ -6,7 +6,7 @@
     <title>Deploy a Snakemake workflow</title>
     <link
       rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/@stlite/browser@0.85.1/build/stlite.css"
+      href="https://cdn.jsdelivr.net/npm/@stlite/browser@1.12.1/build/stlite.css"
     />
   </head>
   <body>
@@ -16,7 +16,7 @@
       </p>
     </div>
     <script type="module">
-      import { mount } from "https://cdn.jsdelivr.net/npm/@stlite/browser@0.85.1/build/stlite.js";
+      import { mount } from "https://cdn.jsdelivr.net/npm/@stlite/browser@1.12.1/build/stlite.js";
 
       // Query parameters are passed as a mounted file instead of relying on
       // stlite's handling of the outer URL.
@@ -37,7 +37,7 @@
 
       mount(
         {
-          requirements: [],
+          requirements: ["polars"],
           entrypoint: "app.py",
           files,
           streamlitConfig: {

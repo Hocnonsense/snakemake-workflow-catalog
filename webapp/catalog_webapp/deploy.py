@@ -53,7 +53,16 @@ class Deployment:
     def __init__(self, downloaded: Mapping[str, bytes]):
         if not downloaded:
             raise DeployError("The source tree is empty.")
-        self.downloaded = downloaded
+        self.schemas = {
+            path: content
+            for path, content in downloaded.items()
+            if path.startswith("workflow/schemas/")
+        }
+        self.downloaded = {
+            path: content
+            for path, content in downloaded.items()
+            if path not in self.schemas
+        }
         self.overrides: dict[str, bytes] = {}
 
     def config_file(self):
@@ -146,7 +155,9 @@ def _wanted(tree):
         if entry.get("type") != "blob":
             continue
         path: str = entry["path"]
-        if path.startswith(("config/", "profiles/", "workflow/")):
+        if path.startswith(("config/", "profiles/", "workflow/schemas/")):
+            yield path
+        elif path in ("workflow/Snakefile", "Snakefile"):
             yield path
         elif "/" not in path:
             licen = path[:7]

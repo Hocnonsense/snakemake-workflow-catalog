@@ -53,6 +53,7 @@ streamlit = ">=1.40,<2"
 pyyaml = ">=6,<7"
 jsonschema = ">=4,<5"
 pytest = ">=8,<9"
+polars = ">=2,<3"
 
 [feature.webapp.tasks]
 test-webapp = "pytest webapp/tests -v"
