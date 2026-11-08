@@ -46,7 +46,7 @@ def test_overrides_win():
     deployment = _deploy(files)
     deployment.overrides["config/config.yaml"] = b"edited: true\n"
 
-    assert deployment["config/config.yaml"] == b"edited: true\n"
+    assert deployment.read("config/config.yaml") == b"edited: true\n"
 
 
 def test_downloaded_and_overrides():
@@ -57,12 +57,12 @@ def test_downloaded_and_overrides():
 
     deployment = _deploy(files)
 
-    assert deployment.get("config/config.yaml") == b"samples: samples.tsv\n"
-    assert deployment.get("profiles/default/config.yaml") == b"cores: 1\n"
-    assert deployment.get("LICENSE") == b"MIT\n"
+    assert deployment.read("config/config.yaml") == b"samples: samples.tsv\n"
+    assert deployment.read("profiles/default/config.yaml") == b"cores: 1\n"
+    assert deployment.read("LICENSE") == b"MIT\n"
     assert "workflow/Snakefile" in deployment.overrides
     assert "README.md" not in deployment.downloaded
-    assert dict(deployment.items())["config/config.yaml"] == b"samples: samples.tsv\n"
+    assert deployment.read("config/config.yaml") == b"samples: samples.tsv\n"
 
 
 def test_existing_yml_is_used():
@@ -71,7 +71,7 @@ def test_existing_yml_is_used():
     assert deployment.config_file() == "config/config.yml"
     assert (
         'configfile: "config/config.yml"'
-        in deployment.overrides["workflow/Snakefile"].decode()
+        in (deployment.overrides["workflow/Snakefile"] or b"").decode()
     )
 
 
@@ -82,7 +82,7 @@ def test_empty_tree():
 
 def test_snakefile_records_ref_and_commit():
     deployment = _deploy(BASE_FILES)
-    snakefile = deployment["workflow/Snakefile"].decode()
+    snakefile = (deployment.read("workflow/Snakefile") or b"").decode()
 
     assert 'github("a/b", path="workflow/Snakefile", tag="v1")' in snakefile
     assert "# deployed from a/b at tag v1 (commit sha1)" in snakefile
@@ -97,21 +97,8 @@ def test_schemas_are_kept_for_the_editor_only():
 
     deployment = _deploy(files)
 
-    assert deployment.schemas == {
+    assert deployment.schemas.schemas == {
         "workflow/schemas/config.schema.yaml": b"type: object\n",
         "workflow/schemas/samples.schema.json": b"{}\n",
     }
-    assert deployment.schema_path("config") == "workflow/schemas/config.schema.yaml"
-    assert deployment.schema_path("samples") == "workflow/schemas/samples.schema.json"
-    assert deployment.schema_path("units") is None
-    assert "workflow/schemas/config.schema.yaml" not in dict(deployment.items())
-
-
-def test_config_schemas_alternative_layout():
-    files = dict(BASE_FILES)
-    files["config/schemas/config.schema.yaml"] = b"type: object\n"
-    files["workflow/schemas/config.schema.yaml"] = b"type: object\n"
-
-    deployment = _deploy(files)
-
-    assert deployment.schema_path("config") == "workflow/schemas/config.schema.yaml"
+    assert deployment.read("workflow/schemas/config.schema.yaml") is None

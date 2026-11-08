@@ -4,20 +4,19 @@ This is a transport-agnostic reimplementation of ``snakedeploy deploy-workflow``
 for the browser app.  It deliberately does not import snakedeploy: the browser
 cannot run its git path, and importing it would pull in PyGithub and pandas.
 
-The output must stay compatible with snakedeploy 0.11.x, see
-``BROWSER_DEPLOY_PLAN.md`` section 4.5 in the SRPtn repository.
+The output must stay compatible with snakedeploy 0.11.x.
 """
 
 from __future__ import annotations
 
-from typing import Mapping, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from snakelit.types import Ref
+from .fs import DeploymentFS
 
 if TYPE_CHECKING:
     from .github import GitHub
 
-SNAKEDEPLOY_COMPAT = "0.11.0"
 
 # The catalog documents both layouts, ``workflow/schemas/`` first.
 _SCHEMA_PREFIXES = ("workflow/schemas/", "config/schemas/")
@@ -49,76 +48,15 @@ class DeployError(Exception):
     """The fetched tree cannot be deployed."""
 
 
-class Deployment:
-    """The downloaded upstream files and the files of the deployed repo."""
-
-    def __init__(self, downloaded: Mapping[str, bytes]):
-        if not downloaded:
-            raise DeployError("The source tree is empty.")
-        self.downloaded = downloaded
-        self.schemas: dict[str, bytes] = {}
-        self.overrides: dict[str, bytes] = {}
-
-    def config_file(self):
-        """Return the config path the generated Snakefile must point at."""
-        for files in (self.overrides, self.downloaded):
-            for ext in "yaml", "yml":
-                config = f"config/config.{ext}"
-                if config in files:
-                    return config
-        config = "config/config.yaml"
-        self.overrides[config] = b""
-        return config
-
-    def set_snakefile(self, repo: str, ref: Ref, snakefile: str):
-        snakefile = _SNAKEFILE_TEMPLATE.format(
-            comment=_deployment_comment(repo, ref),
-            config=self.config_file(),
-            repo=repo,
-            name=_module_name(repo),
-            snakefile=_module_declaration(repo, ref, snakefile),
-        )
-        self.overrides["workflow/Snakefile"] = snakefile.encode("utf-8")
-
-    def set_schemas(self, schemas: Mapping[str, bytes]):
-        """Keep the upstream JSON schemas for the editor, not for the repo."""
-        for path in sorted(schemas):  # later wins, so prefer workflow/schemas/
-            name = path.rsplit("/", 1)[-1]
-            base, _, ext = name.rpartition(".schema.")
-            if not base or ext not in ("yaml", "yml", "json"):
-                continue
-            self.schemas[path] = schemas[path]
-
-    def schema_path(self, item: str = "config"):
-        """Return the schema registered for ``item``, if any."""
-        for prefix in _SCHEMA_PREFIXES:
-            for ext in ("yaml", "yml", "json"):
-                path = f"{prefix}{item}.schema.{ext}"
-                if path in self.schemas:
-                    return path
-
-    def items(self):
-        yield from self.overrides.items()
-        for path, content in self.downloaded.items():
-            if path not in self.overrides:
-                yield path, content
-
-    def get(self, path: str):
-        if path in self.overrides:
-            return self.overrides[path]
-        return self.downloaded.get(path)
-
-    def __getitem__(self, key):
-        item = self.get(key)
-        if item is None:
-            raise KeyError(key)
-        return item
-
-    def __setitem__(self, key, value):
-        self.overrides[key] = value
-
-    def __contains__(self, key):
-        return key in self.overrides or key in self.downloaded
+def _set_snakefile(files: DeploymentFS, repo: str, ref: Ref, snakefile: str):
+    snakefile = _SNAKEFILE_TEMPLATE.format(
+        comment=_deployment_comment(repo, ref),
+        config=files.config_file(),
+        repo=repo,
+        name=_module_name(repo),
+        snakefile=_module_declaration(repo, ref, snakefile),
+    )
+    files.write("workflow/Snakefile", snakefile.encode("utf-8"))
 
 
 def _module_name(owner_repo: str):
@@ -184,14 +122,37 @@ def _schemas(tree):
             continue
         path: str = entry["path"]
         if path.startswith(_SCHEMA_PREFIXES):
+            base, _, ext = path.rpartition(".schema.")
+            if not base or base.endswith("/") or ext not in ("yaml", "yml", "json"):
+                continue
             yield path
+
+
+class Schemas:
+    def __init__(self, schemas: Mapping[str, bytes]):
+        self.schemas = schemas
+
+    def find(self, item: str = "config"):
+        """Return the schema registered for ``item``, following the catalog rules."""
+        if item in self.schemas:
+            return item
+        for prefix in _SCHEMA_PREFIXES:
+            for ext in ("yaml", "yml", "json"):
+                path = f"{prefix}{item}.schema.{ext}"
+                if path in self.schemas:
+                    return path
+
+    def get(self, path: str):
+        """Return the schema for a file, matched by its stem."""
+        return self.schemas[path]
 
 
 def deploy(repo: str, ref: Ref, gh: "GitHub"):
     """Fetch ``ref`` and return the destination files of a deployment."""
     ref_name = ref.sha or ref.name
     tree = gh.get_tree(repo, ref_name)["tree"]
-    files = Deployment(gh.fetch_files(repo, ref_name, _wanted(tree)))
-    files.set_schemas(gh.fetch_files(repo, ref_name, _schemas(tree)))
-    files.set_snakefile(repo, ref, _source_snakefile(tree))
+    # later wins, so prefer workflow/schemas/
+    schemas = Schemas(gh.fetch_files(repo, ref_name, sorted(_schemas(tree))))
+    files = DeploymentFS(gh.fetch_files(repo, ref_name, _wanted(tree)), schemas)
+    _set_snakefile(files, repo, ref, _source_snakefile(tree))
     return files

@@ -125,7 +125,9 @@ def test_deploy_lists_downloaded_files(app):
     app.run()
 
     assert not app.exception, [str(error.value) for error in app.exception]
-    assert "Downloaded files" in [item.value for item in app.subheader]
+    assert "Browse deployed files" in [item.label for item in app.button]
+    next(item for item in app.button if item.label == "Browse deployed files").click()
+    app.run()
     workflow_dir = next(
         key
         for key in (item.key for item in app.button)
@@ -157,7 +159,7 @@ def test_editing_config_writes_an_override(app):
     app.run()
 
     deployment = app.session_state["deploy-result"]["deployment"]
-    assert yaml.safe_load(deployment["config/config.yaml"])["samples"] == "other.tsv"
+    assert yaml.safe_load(deployment.get("config/config.yaml"))["samples"] == "other.tsv"
 
 
 def test_broken_config_is_reported(app_with_broken_config):
@@ -168,3 +170,34 @@ def test_broken_config_is_reported(app_with_broken_config):
 
     assert not app_with_broken_config.exception
     assert app_with_broken_config.error
+
+
+def test_create_file_from_a_config_value(app):
+    next(item for item in app.button if item.label == "Deploy").click()
+    app.run()
+
+    samples = next(
+        item for item in app.text_input if item.key and item.key.endswith("-samples")
+    )
+    samples.set_value("notes.txt")
+    app.run()
+
+    create = next(
+        item for item in app.button if item.key and item.key.endswith("-samples-file")
+    )
+    assert create.label == "Edit"
+    create.click()
+    app.run()
+
+    assert not app.exception, [str(error.value) for error in app.exception]
+    editor = next(
+        item for item in app.text_area if item.key and "-preview-text" in item.key
+    )
+    editor.set_value("sample\tcondition\n")
+    app.run()
+
+    deployment = app.session_state["deploy-result"]["deployment"]
+    assert deployment.get("notes.txt") == b"sample\tcondition\n"
+    next(item for item in app.button if item.label == "Browse deployed files").click()
+    app.run()
+    assert "notes.txt" in [item.label for item in app.button]

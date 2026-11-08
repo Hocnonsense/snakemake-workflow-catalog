@@ -10,16 +10,20 @@ from __future__ import annotations
 import streamlit as st
 
 from snakelit.editors import schema_dict as _schema_dict
+
 from snakelit.utils.yaml import load
 
-from .deploy import Deployment
+from .deploy import Schemas
+from .fs import DeploymentFS
 
 
 def schema_dict(
-    deployment: Deployment,
+    store: DeploymentFS,
     file: str,
     default_schema: str | None = None,
     key: str = "config-schema",
+    *,
+    edit_file=None,
 ):
     """Edit ``file``, write the result into ``deployment``, return errors.
 
@@ -27,13 +31,13 @@ def schema_dict(
     is still opened as text so it can be repaired.  Nothing is written when
     the text is unchanged or invalid.
     """
-    text = (deployment.get(file) or b"").decode("utf-8")
+    text = (store.read(file) or b"").decode("utf-8")
     errors: list[str] = []
 
     header = f"Editing `{file}`"
     schema = None
-    if deployment.schemas:
-        content = _choose_schema(deployment, file, default_schema, key)
+    if store.schemas:
+        content = _choose_schema(store.schemas, file, default_schema, key)
         if content:
             schema, error = _parse_schema(content)
             if error is not None:
@@ -43,9 +47,11 @@ def schema_dict(
         else:
             header += f" without schema"
 
-    updated = _schema_dict(text, errors, schema, header=header, key=key)
+    updated = _schema_dict(
+        text, errors, schema, header=header, key=key, edit_file=edit_file
+    )
     if updated is not None:
-        deployment.overrides[file] = updated.encode("utf-8")
+        store.write(file, updated.encode("utf-8"))
         # the file list above was rendered before the edit; rerun shows it
         st.rerun()
     return errors
@@ -65,7 +71,7 @@ def _parse_schema(content: bytes):
 
 
 def _choose_schema(
-    deployment: Deployment,
+    schemas: Schemas,
     file: str,
     default_schema: str | None,
     key: str,
@@ -75,13 +81,13 @@ def _choose_schema(
     ``default_schema`` is the schema path that should be selected by default,
     or ``None`` to try to pick the schema by file name.
     """
-    paths = sorted(deployment.schemas)
+    paths = sorted(schemas.schemas)
     if not paths:  # noqa
         return
 
     if default_schema is None:
         item = file.rsplit("/", 1)[-1].split(".", 1)[0]
-        default_schema = deployment.schema_path(item)
+        default_schema = schemas.find(item)
     index = 1 + paths.index(default_schema) if default_schema in paths else 0
 
     choice = st.selectbox(
@@ -97,4 +103,4 @@ def _choose_schema(
     if choice == "(none)":
         return
 
-    return deployment.schemas[choice]
+    return schemas.get(choice)

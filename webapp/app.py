@@ -1,7 +1,4 @@
-"""stlite app: pick a workflow ref, deploy it, edit its configuration.
-
-Publishing is the next phase in ``BROWSER_DEPLOY_PLAN.md``.
-"""
+"""stlite app: pick a workflow ref, deploy it, edit its configuration."""
 
 from __future__ import annotations
 
@@ -11,9 +8,10 @@ import streamlit as st
 
 from snakelit.types import Ref
 from snakelit.version_picker import version_picker
-from snakelit.file_view import file_view, File, Stat, preview_for
+from snakelit.file_view import file_explorer
 from catalog_webapp.auth import render_auth
-from catalog_webapp.deploy import DeployError, Deployment, deploy
+from catalog_webapp.deploy import DeployError, deploy
+from catalog_webapp.fs import DeploymentFS
 from catalog_webapp.github import GitHub, GitHubError
 from catalog_webapp.editor import schema_dict
 
@@ -91,23 +89,16 @@ if result["key"] != f"{repo}@{ref.sha}":
     )
     st.stop()
 
-deployment: Deployment = result["deployment"]
-files = {
-    path: File(
-        stat=Stat(size=len(content)),
-        preview=preview_for(path, content),
-    )
-    for path, content in deployment.items()
-}
-
-file_view(
-    files,
-    key=f"file-view-{result['key']}",
-    header="Downloaded files",
+deployment: DeploymentFS = result["deployment"]
+change_preview = file_explorer(
+    deployment, key=f"file-view-{result['key']}", header="Browse deployed files"
 )
 
 errors = schema_dict(
-    deployment, deployment.config_file(), key=f"config-{result['key']}"
+    deployment,
+    deployment.config_file(),
+    key=f"config-{result['key']}",
+    edit_file=lambda path: change_preview(path, ("edit",)),
 )
 for message in errors:
     st.error(message)
