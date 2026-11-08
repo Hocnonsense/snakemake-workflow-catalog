@@ -1,11 +1,12 @@
 """Config editing glue for the stlite app.
 
-``snakelit.editors.schema_dict`` edits one file; this module adds the
-app-specific parts: locating the file, offering the upstream schemas, and
-writing the result back into the deployment.
+``select_schema_edit`` wraps ``snakelit.editors.schema_dict`` with the schema
+selector and error reporting the browser app needs.
 """
 
 from __future__ import annotations
+
+from typing import Callable
 
 import streamlit as st
 
@@ -31,10 +32,7 @@ def select_schema_edit(
                 schema, error = _parse_schema(content)
                 if error is not None:
                     errors.append(error)
-            if schema:
-                header += " with schema"
-            else:
-                header += " without schema"
+            header += " with schema" if schema else " without schema"
         updated = schema_edit(
             data.decode("utf-8"),
             errors,
@@ -70,11 +68,7 @@ def _choose_schema(
     default_schema: str | None,
     key: str,
 ):
-    """Render the read-only schema selector; return the raw schema content.
-
-    ``default_schema`` is the schema path that should be selected by default,
-    or ``None`` to try to pick the schema by file name.
-    """
+    """Render the read-only schema selector; return the raw schema content."""
     paths = sorted(schemas.schemas)
     if not paths:  # noqa
         return
@@ -96,5 +90,4 @@ def _choose_schema(
     )
     if choice == "(none)":
         return
-
     return schemas.get(choice)

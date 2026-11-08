@@ -63,9 +63,7 @@ def _run_deploy(gh: GitHub, repo: str, ref: Ref):
     else:
         result_key = f"{repo}@{ref.sha}"
         explorer = FileExplorer(key=f"file-view-{result_key}", store=deployment)
-        deployment.set_file_editors(
-            partial(explorer.change_preview, args=("edit",))
-        )
+        deployment.set_file_editors(partial(explorer.change_preview, args=("edit",)))
         st.session_state["deploy-result"] = {
             "key": result_key,
             "explorer": explorer,
