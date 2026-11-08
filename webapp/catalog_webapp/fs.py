@@ -49,7 +49,7 @@ class DeploymentFS(FileStore):
         def render():
             if mode == "Edit":
                 edited = edit_for(path, content, key=f"{path}-preview")
-                if edited:
+                if edited is not None:
                     if edited != content:
                         self.write(path, edited)
                         st.rerun()

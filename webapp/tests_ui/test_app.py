@@ -159,7 +159,7 @@ def test_editing_config_writes_an_override(app):
     app.run()
 
     deployment = app.session_state["deploy-result"]["deployment"]
-    assert yaml.safe_load(deployment.get("config/config.yaml"))["samples"] == "other.tsv"
+    assert yaml.safe_load(deployment.read("config/config.yaml"))["samples"] == "other.tsv"
 
 
 def test_broken_config_is_reported(app_with_broken_config):
@@ -197,7 +197,7 @@ def test_create_file_from_a_config_value(app):
     app.run()
 
     deployment = app.session_state["deploy-result"]["deployment"]
-    assert deployment.get("notes.txt") == b"sample\tcondition\n"
+    assert deployment.read("notes.txt") == b"sample\tcondition\n"
     next(item for item in app.button if item.label == "Browse deployed files").click()
     app.run()
     assert "notes.txt" in [item.label for item in app.button]
