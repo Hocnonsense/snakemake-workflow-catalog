@@ -158,7 +158,7 @@ def test_editing_config_writes_an_override(app):
     samples.set_value("other.tsv")
     app.run()
 
-    deployment = app.session_state["deploy-result"]["deployment"]
+    deployment = app.session_state["deploy-result"]["explorer"].store
     assert yaml.safe_load(deployment.read("config/config.yaml"))["samples"] == "other.tsv"
 
 
@@ -196,7 +196,7 @@ def test_create_file_from_a_config_value(app):
     editor.set_value("sample\tcondition\n")
     app.run()
 
-    deployment = app.session_state["deploy-result"]["deployment"]
+    deployment = app.session_state["deploy-result"]["explorer"].store
     assert deployment.read("notes.txt") == b"sample\tcondition\n"
     next(item for item in app.button if item.label == "Browse deployed files").click()
     app.run()

@@ -9,52 +9,46 @@ from __future__ import annotations
 
 import streamlit as st
 
-from snakelit.editors import schema_dict as _schema_dict
-
 from snakelit.utils.yaml import load
 
 from .deploy import Schemas
-from .fs import DeploymentFS
 
 
-def schema_dict(
-    store: DeploymentFS,
-    file: str,
+def select_schema_edit(
+    schemas: Schemas,
+    schema_edit: Callable,
+    language: str,
     default_schema: str | None = None,
-    key: str = "config-schema",
-    *,
     edit_file=None,
 ):
-    """Edit ``file``, write the result into ``deployment``, return errors.
+    def config_edit(path: str, data: bytes, key: str):
+        errors: list[str] = []
+        header = f"Editing `{path}`"
+        schema = None
+        if schemas:
+            content = _choose_schema(schemas, path, default_schema, key)
+            if content:
+                schema, error = _parse_schema(content)
+                if error is not None:
+                    errors.append(error)
+            if schema:
+                header += " with schema"
+            else:
+                header += " without schema"
+        updated = schema_edit(
+            data.decode("utf-8"),
+            errors,
+            schema,
+            header=header,
+            key=key,
+            edit_file=edit_file,
+            format=language,
+        )
+        for message in errors:
+            st.error(message)
+        return data if updated is None else updated.encode("utf-8")
 
-    ``snakelit`` decides how the content is edited; a file that does not parse
-    is still opened as text so it can be repaired.  Nothing is written when
-    the text is unchanged or invalid.
-    """
-    text = (store.read(file) or b"").decode("utf-8")
-    errors: list[str] = []
-
-    header = f"Editing `{file}`"
-    schema = None
-    if store.schemas:
-        content = _choose_schema(store.schemas, file, default_schema, key)
-        if content:
-            schema, error = _parse_schema(content)
-            if error is not None:
-                errors.append(error)
-        if schema:
-            header += f" with schema"
-        else:
-            header += f" without schema"
-
-    updated = _schema_dict(
-        text, errors, schema, header=header, key=key, edit_file=edit_file
-    )
-    if updated is not None:
-        store.write(file, updated.encode("utf-8"))
-        # the file list above was rendered before the edit; rerun shows it
-        st.rerun()
-    return errors
+    return config_edit
 
 
 def _parse_schema(content: bytes):

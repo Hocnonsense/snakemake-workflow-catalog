@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 import json
+from functools import partial
 
 import streamlit as st
 
 from snakelit.types import Ref
 from snakelit.version_picker import version_picker
-from snakelit.file_view import file_explorer
+from snakelit.file_view import FileExplorer
 from catalog_webapp.auth import render_auth
 from catalog_webapp.deploy import DeployError, deploy
 from catalog_webapp.fs import DeploymentFS
 from catalog_webapp.github import GitHub, GitHubError
-from catalog_webapp.editor import schema_dict
 
 st.set_page_config(page_title="Deploy a Snakemake workflow", layout="wide")
 
@@ -61,9 +61,14 @@ def _run_deploy(gh: GitHub, repo: str, ref: Ref):
         st.session_state["deploy-error"] = str(error)
         st.session_state.pop("deploy-result", None)
     else:
+        result_key = f"{repo}@{ref.sha}"
+        explorer = FileExplorer(key=f"file-view-{result_key}", store=deployment)
+        deployment.set_file_editors(
+            partial(explorer.change_preview, args=("edit",))
+        )
         st.session_state["deploy-result"] = {
-            "key": f"{repo}@{ref.sha}",
-            "deployment": deployment,
+            "key": result_key,
+            "explorer": explorer,
         }
         st.session_state.pop("deploy-error", None)
 
@@ -89,16 +94,10 @@ if result["key"] != f"{repo}@{ref.sha}":
     )
     st.stop()
 
-deployment: DeploymentFS = result["deployment"]
-change_preview = file_explorer(
-    deployment, key=f"file-view-{result['key']}", header="Browse deployed files"
-)
+explorer = result["explorer"]
+deployment: DeploymentFS = explorer.store
+explorer.render(header="Browse deployed files")
 
-errors = schema_dict(
-    deployment,
-    deployment.config_file(),
-    key=f"config-{result['key']}",
-    edit_file=lambda path: change_preview(path, ("edit",)),
-)
-for message in errors:
-    st.error(message)
+config_editor = deployment.show(deployment.config_file(), "Edit")
+if config_editor is not None:
+    config_editor()

@@ -14,6 +14,21 @@ class DeploymentFS(FileStore):
         self.downloaded = downloaded
         self.schemas = schemas
         self.overrides: dict[str, bytes | None] = {}
+        self.editors = {}
+
+    def set_file_editors(self, edit_file=None):
+        from .editor import select_schema_edit
+        from snakelit.editors import schema_dict
+
+        self.editors = {
+            "yaml": select_schema_edit(
+                self.schemas, schema_dict, "yaml", edit_file=edit_file
+            ),
+            "json": select_schema_edit(
+                self.schemas, schema_dict, "json", edit_file=edit_file
+            ),
+        }
+        self.editors["yml"] = self.editors["yaml"]
 
     def config_file(self):
         """Return the config path the generated Snakefile must point at."""
@@ -48,7 +63,9 @@ class DeploymentFS(FileStore):
 
         def render():
             if mode == "Edit":
-                edited = edit_for(path, content, key=f"{path}-preview")
+                edited = edit_for(
+                    path, content, key=f"{path}-preview", editors=self.editors
+                )
                 if edited is not None:
                     if edited != content:
                         self.write(path, edited)

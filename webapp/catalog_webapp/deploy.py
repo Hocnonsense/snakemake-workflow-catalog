@@ -143,7 +143,6 @@ class Schemas:
                     return path
 
     def get(self, path: str):
-        """Return the schema for a file, matched by its stem."""
         return self.schemas[path]
 
 
