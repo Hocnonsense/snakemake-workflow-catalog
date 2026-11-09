@@ -114,9 +114,7 @@ def test_ref_picker_shows_time_in_parentheses(app):
 def test_sidebar_offers_token_login(app):
     assert not app.exception, [str(error.value) for error in app.exception]
     assert "Personal access token" in [item.label for item in app.text_input]
-    assert "Create a token" in [
-        item.label for item in app.get("link_button")
-    ]
+    assert "Create a token" in [item.label for item in app.get("link_button")]
 
 
 def test_deploy_lists_downloaded_files(app):
@@ -159,7 +157,9 @@ def test_editing_config_writes_an_override(app):
     app.run()
 
     deployment = app.session_state["deploy-result"]["explorer"].store
-    assert yaml.safe_load(deployment.read("config/config.yaml"))["samples"] == "other.tsv"
+    assert (
+        yaml.safe_load(deployment.read("config/config.yaml"))["samples"] == "other.tsv"
+    )
 
 
 def test_broken_config_is_reported(app_with_broken_config):

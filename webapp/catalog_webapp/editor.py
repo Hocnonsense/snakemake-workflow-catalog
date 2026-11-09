@@ -20,7 +20,7 @@ def select_schema_edit(
     schema_edit: Callable,
     language: str,
     default_schema: str | None = None,
-    edit_file=None,
+    **options,
 ):
     def config_edit(path: str, data: bytes, key: str):
         errors: list[str] = []
@@ -34,17 +34,17 @@ def select_schema_edit(
                     errors.append(error)
             header += " with schema" if schema else " without schema"
         updated = schema_edit(
-            data.decode("utf-8"),
+            data,
             errors,
             schema,
             header=header,
             key=key,
-            edit_file=edit_file,
             format=language,
+            **options,
         )
         for message in errors:
             st.error(message)
-        return data if updated is None else updated.encode("utf-8")
+        return data if updated is None else updated
 
     return config_edit
 

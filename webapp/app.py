@@ -9,7 +9,7 @@ import streamlit as st
 
 from snakelit.types import Ref
 from snakelit.version_picker import version_picker
-from snakelit.file_view import FileExplorer
+from snakelit.file_view import FileExplorer, edit_for
 from catalog_webapp.auth import render_auth
 from catalog_webapp.deploy import DeployError, deploy
 from catalog_webapp.fs import DeploymentFS
@@ -83,8 +83,9 @@ if st.session_state.get("deploy-error"):
 result = st.session_state.get("deploy-result")
 if not result:
     st.stop()
-if result["key"] != f"{repo}@{ref.sha}":
-    last_ref = result["key"].split("@", 1)[-1]
+key: str = result["key"]
+if key != f"{repo}@{ref.sha}":
+    last_ref = key.split("@", 1)[-1]
     st.info(
         "The workflow ref has changed. "
         "Click the **Deploy** button to fetch the new version. "
@@ -93,9 +94,7 @@ if result["key"] != f"{repo}@{ref.sha}":
     st.stop()
 
 explorer = result["explorer"]
-deployment: DeploymentFS = explorer.store
+fs: DeploymentFS = explorer.store
 explorer.render(header="Browse deployed files")
 
-config_editor = deployment.show(deployment.config_file(), "Edit")
-if config_editor is not None:
-    config_editor()
+edit_for(fs.config_file(), fs, key=f"config-{key}", editors=fs.editors)

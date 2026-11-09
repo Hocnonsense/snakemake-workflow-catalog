@@ -1,8 +1,6 @@
 from typing import TYPE_CHECKING, Mapping
 
-import streamlit as st
-
-from snakelit.file_view import preview_for, edit_for
+from snakelit.file_view import edit_for, preview_for
 from snakelit.types import FileStore, Stat
 
 if TYPE_CHECKING:
@@ -19,6 +17,7 @@ class DeploymentFS(FileStore):
     def set_file_editors(self, edit_file=None):
         from .editor import select_schema_edit
         from snakelit.editors import schema_dict
+        from snakelit.tables.editor import schema_table
 
         self.editors = {
             "yaml": select_schema_edit(
@@ -27,18 +26,27 @@ class DeploymentFS(FileStore):
             "json": select_schema_edit(
                 self.schemas, schema_dict, "json", edit_file=edit_file
             ),
+            "csv": select_schema_edit(self.schemas, schema_table, "csv"),
+            "tsv": select_schema_edit(self.schemas, schema_table, "tsv"),
+            "parquet": select_schema_edit(self.schemas, schema_table, "parquet"),
+            "xlsx": select_schema_edit(self.schemas, schema_table, "xlsx"),
         }
         self.editors["yml"] = self.editors["yaml"]
 
-    def config_file(self):
-        """Return the config path the generated Snakefile must point at."""
+    def config_path(self):
+        """Return where the workflow config lives, without creating it."""
         for files in (self.overrides, self.downloaded):
             for ext in "yaml", "yml":
                 config = f"config/config.{ext}"
                 if config in files:
                     return config
-        config = "config/config.yaml"
-        self.overrides[config] = b""
+        return "config/config.yaml"
+
+    def config_file(self):
+        """Return the config path the generated Snakefile must point at."""
+        config = self.config_path()
+        if config not in self.overrides and config not in self.downloaded:
+            self.overrides[config] = b""
         return config
 
     # region FileStore interface
@@ -55,6 +63,9 @@ class DeploymentFS(FileStore):
         return None if content is None else Stat(len(content))
 
     def show(self, path, mode="Preview"):
+        if path == self.config_path():
+            # The app renders the config in a dedicated, always-visible editor.
+            return None
         content = self.read(path)
         if content is None:
             if mode == "Preview":
@@ -63,15 +74,9 @@ class DeploymentFS(FileStore):
 
         def render():
             if mode == "Edit":
-                edited = edit_for(
-                    path, content, key=f"{path}-preview", editors=self.editors
-                )
-                if edited is not None:
-                    if edited != content:
-                        self.write(path, edited)
-                        st.rerun()
-                    return
-            preview_for(path, content)
+                edit_for(path, self, key=f"{path}-preview", editors=self.editors)
+            else:
+                preview_for(path, content)
 
         return render
 
