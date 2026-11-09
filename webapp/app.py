@@ -9,7 +9,8 @@ import streamlit as st
 
 from snakelit.types import Ref
 from snakelit.version_picker import version_picker
-from snakelit.file_view import FileExplorer, edit_for
+from snakelit.edit import edit_for
+from snakelit.file_explorer import FileExplorer
 from catalog_webapp.auth import render_auth
 from catalog_webapp.deploy import DeployError, deploy
 from catalog_webapp.fs import DeploymentFS

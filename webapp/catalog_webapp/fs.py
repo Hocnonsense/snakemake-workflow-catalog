@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING, Mapping
 
-from snakelit.file_view import edit_for, preview_for
+from snakelit.edit import edit_for
+from snakelit.preview import preview_for
 from snakelit.types import FileStore, Stat
 
 if TYPE_CHECKING:
@@ -16,15 +17,15 @@ class DeploymentFS(FileStore):
 
     def set_file_editors(self, edit_file=None):
         from .editor import select_schema_edit
-        from snakelit.editors import schema_dict
-        from snakelit.tables.editor import schema_table
+        from snakelit.editor.config import schema_config
+        from snakelit.editor.table import schema_table
 
         self.editors = {
             "yaml": select_schema_edit(
-                self.schemas, schema_dict, "yaml", edit_file=edit_file
+                self.schemas, schema_config, "yaml", edit_file=edit_file
             ),
             "json": select_schema_edit(
-                self.schemas, schema_dict, "json", edit_file=edit_file
+                self.schemas, schema_config, "json", edit_file=edit_file
             ),
             "csv": select_schema_edit(self.schemas, schema_table, "csv"),
             "tsv": select_schema_edit(self.schemas, schema_table, "tsv"),

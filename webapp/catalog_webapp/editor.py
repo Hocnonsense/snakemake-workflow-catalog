@@ -1,6 +1,6 @@
 """Config editing glue for the stlite app.
 
-``select_schema_edit`` wraps ``snakelit.editors.schema_dict`` with the schema
+``select_schema_edit`` wraps ``snakelit.editor.config.schema_config`` with the schema
 selector and error reporting the browser app needs.
 """
 
