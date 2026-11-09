@@ -129,7 +129,7 @@ def test_deploy_lists_downloaded_files(app):
     workflow_dir = next(
         key
         for key in (item.key for item in app.button)
-        if key and key.endswith("-dir-workflow/")
+        if key and key.endswith("-dir-workflow")
     )
     app.button(key=workflow_dir).click()
     app.run()

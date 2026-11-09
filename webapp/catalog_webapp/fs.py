@@ -51,12 +51,12 @@ class DeploymentFS(FileStore):
         return config
 
     # region FileStore interface
-    def paths(self):
+    def paths(self, dir=""):
         for path, content in self.overrides.items():
-            if content is not None:
+            if path.startswith(dir) and content is not None:
                 yield path
-        for path in self.downloaded:
-            if path not in self.overrides:
+        for path in self.downloaded.keys() - self.overrides:
+            if path.startswith(dir):
                 yield path
 
     def stat(self, path):
