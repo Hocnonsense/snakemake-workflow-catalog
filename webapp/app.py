@@ -11,11 +11,11 @@ from snakelit.types import Ref
 from snakelit.version_picker import version_picker
 from snakelit.edit import edit_for
 from snakelit.file_explorer import FileExplorer
-from snakelit.utils.ui_components import toggle_button
 from catalog_webapp.auth import render_auth
 from catalog_webapp.deploy import DeployError, deploy
 from catalog_webapp.fs import DeploymentFS
 from catalog_webapp.github import GitHub, GitHubError
+from catalog_webapp.merge import diff_files, render_merge
 from catalog_webapp.publish import publish_form, zip_bytes
 from catalog_webapp.stlite import flush_spinner
 
@@ -76,6 +76,9 @@ def _run_deploy(gh: GitHub, repo: str, ref: Ref):
                 "key": result_key,
                 "explorer": explorer,
             }
+            st.session_state.pop("merge", None)
+            st.session_state.pop("publish-branch", None)
+            st.session_state.pop("publish-form-open", None)
             st.session_state.pop("deploy-error", None)
 
 
@@ -127,11 +130,18 @@ if download_col.button(
         mime="application/zip",
         width="stretch",
     )
-if publish_col.button(
-    "Submit to GitHub",
-    key="github-publish",
-    width="stretch",
-    disabled=not gh.token,
-    help="Connect with a personal access token in the sidebar.",
-):
-    publish_form(fs, gh, repo, ref, publish_col)
+if not st.session_state.get("publish-form-open"):
+    if publish_col.button(
+        "Submit to GitHub",
+        key="github-publish",
+        width="stretch",
+        disabled=not gh.token,
+        help="Connect with a personal access token in the sidebar.",
+    ):
+        st.session_state["publish-form-open"] = True
+if st.session_state.get("publish-form-open"):
+    publish_form(fs, gh, repo, ref, publish_col, diff_files=diff_files)
+
+head, files = st.session_state.get("merge", (None, {}))
+if files:
+    render_merge(fs, head, files)

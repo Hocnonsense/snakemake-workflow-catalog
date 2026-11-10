@@ -305,6 +305,21 @@ class GitHub:
     def fetch_files(self, owner_repo: str, ref: str, files: Iterable[str]):
         return {path: self.get_raw_file(owner_repo, ref, path) for path in files}
 
+    def pull_files(self, owner_repo: str, branch: str):
+        """Return ``(head sha, every blob)`` for ``branch``."""
+        sha = self.get_ref_sha(owner_repo, branch)
+        if sha is None:
+            raise GitHubError(404, f"Branch {branch!r} does not exist on {owner_repo}.")
+        tree = self.get_tree(owner_repo, sha)
+        if tree.get("truncated"):
+            raise GitHubError(409, "The repository tree is truncated.")
+        paths = [
+            entry["path"]
+            for entry in tree.get("tree", [])
+            if entry.get("type") == "blob"
+        ]
+        return sha, self.fetch_files(owner_repo, sha, paths)
+
     # -- writes ------------------------------------------------------------
 
     def create_repo(
@@ -349,19 +364,18 @@ class GitHub:
         branch: str,
         files: Mapping[str, bytes],
         message: str,
-        *,
-        default_branch: str = "main",
     ) -> str:
         """Create the first commit of an empty repository and return its sha.
 
         The git database API answers 409 (``Git Repository is empty``) until
         the repository has a commit, so the first file is written through the
-        contents API to initialize it; the remaining files are added on top.
-        A ref is created when ``branch`` is not the repository's default
-        branch; the caller decides whether it also becomes the default.
+        contents API on ``branch`` to initialize it; the remaining files are
+        added on top.
         """
         paths = sorted(files)
-        initialized = self.create_file(owner_repo, paths[0], files[paths[0]], message)
+        initialized = self.create_file(
+            owner_repo, paths[0], files[paths[0]], message, branch=branch
+        )
         head = initialized["commit"]["sha"]
         if len(paths) > 1:
             entries = [
@@ -377,11 +391,7 @@ class GitHub:
                 owner_repo, entries, initialized["commit"]["tree"]["sha"]
             )
             head = self.create_commit(owner_repo, message, tree, head)
-            # The contents API created the default branch; move it to the
-            # complete tree even when publishing to a separate branch.
-            self.update_ref(owner_repo, default_branch, head)
-        if branch != default_branch:
-            self.create_ref(owner_repo, branch, head)
+            self.update_ref(owner_repo, branch, head)
         return head
 
     def get_ref_sha(self, owner_repo: str, branch: str):

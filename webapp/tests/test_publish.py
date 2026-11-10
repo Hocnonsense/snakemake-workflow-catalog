@@ -9,11 +9,12 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from catalog_webapp.github import GitHub
+from catalog_webapp.github import GitHub, GitHubError
 from catalog_webapp.deploy import DeploymentFS  # noqa: E402
 from catalog_webapp.publish import (  # noqa: E402
     PublishError,
     full_push,
+    push_deployment,
     repo_name,
     valid_branch,
     zip_bytes,
@@ -56,12 +57,8 @@ class FakeGitHub(GitHub):
     def update_ref(self, owner_repo, branch, sha):
         self.calls.append(("ref-update", owner_repo, branch, sha))
 
-    def commit_files(
-        self, owner_repo, branch, files, message, *, default_branch="main"
-    ):
-        self.calls.append(
-            ("commit-files", owner_repo, branch, files, message, default_branch)
-        )
+    def commit_files(self, owner_repo, branch, files, message):
+        self.calls.append(("commit-files", owner_repo, branch, files, message))
         return "commit"
 
     def set_default_branch(self, owner_repo, branch):
@@ -82,11 +79,9 @@ def test_zip_contains_deployed_files_with_overrides():
 def test_publish_branch_updates_an_existing_branch():
     gh = FakeGitHub({"main": "old-sha"})
 
-    url = full_push(
-        gh, "main", "owner/work-flow", REF, {"a.txt": b"A"}, target_repo=TARGET
-    )
+    sha = full_push(gh, "main", "message", {"a.txt": b"A"}, target_repo=TARGET)
 
-    assert url == "https://github.com/me/work-flow"
+    assert sha == "commit"
     entries = next(call[2] for call in gh.calls if call[0] == "tree")
     assert entries == [
         {"path": "a.txt", "mode": "100644", "type": "blob", "sha": "blob-A"}
@@ -97,18 +92,66 @@ def test_publish_branch_updates_an_existing_branch():
     assert ("ref-update", "me/work-flow", "main", "commit") in gh.calls
 
 
-def test_publish_branch_makes_a_new_branch_the_default_of_an_empty_repository():
-    gh = FakeGitHub()
+def test_publish_branch_checks_the_sha_obtained_by_pull():
+    gh = FakeGitHub({"main": "old-sha"})
 
     full_push(
-        gh, "feature", "owner/work-flow", REF, {"a.txt": b"A"}, target_repo=TARGET
+        gh,
+        "main",
+        "message",
+        {"a.txt": b"A"},
+        target_repo=TARGET,
+        expected_sha="old-sha",
     )
+    assert ("ref-update", "me/work-flow", "main", "commit") in gh.calls
 
-    commit = next(call for call in gh.calls if call[0] == "commit-files")
-    assert commit[1] == "me/work-flow"
-    assert commit[2] == "feature"
-    assert commit[3] == {"a.txt": b"A"}
-    assert commit[5] == "main"
+    with pytest.raises(PublishError, match="branch moved"):
+        full_push(
+            gh,
+            "main",
+            "message",
+            {"a.txt": b"A"},
+            target_repo=TARGET,
+            expected_sha="other-sha",
+        )
+
+
+def test_publish_branch_makes_a_new_branch_a_root_commit():
+    gh = FakeGitHub()
+
+    full_push(gh, "feature", "message", {"a.txt": b"A"}, target_repo=TARGET)
+
+    commit = next(call for call in gh.calls if call[0] == "commit")
+    assert commit[4] is None
+    assert ("ref-create", "me/work-flow", "feature", "commit") in gh.calls
+    assert not [call for call in gh.calls if call[0] == "default"]
+
+
+class EmptyFakeGitHub(FakeGitHub):
+    def __init__(self):
+        super().__init__()
+        self.empty = True
+
+    def create_blob(self, owner_repo, content):
+        if self.empty:
+            raise GitHubError(409, "Git Repository is empty.")
+        return super().create_blob(owner_repo, content)
+
+    def commit_files(self, owner_repo, branch, files, message):
+        self.empty = False
+        return super().commit_files(owner_repo, branch, files, message)
+
+
+def test_publish_branch_initializes_an_empty_repository_as_root():
+    gh = EmptyFakeGitHub()
+
+    full_push(gh, "feature", "message", {"a.txt": b"A"}, target_repo=TARGET)
+
+    commit_files = next(call for call in gh.calls if call[0] == "commit-files")
+    assert commit_files[2] == "main"
+    commit = next(call for call in gh.calls if call[0] == "commit")
+    assert commit[4] is None
+    assert ("ref-create", "me/work-flow", "feature", "commit") in gh.calls
     assert ("default", "me/work-flow", "feature") in gh.calls
 
 
@@ -124,12 +167,12 @@ def test_publish_branch_requires_a_token():
     gh.token = None
 
     with pytest.raises(PublishError, match="token"):
-        full_push(gh, "main", "owner/wf", REF, {"a": b"A"}, target_repo=TARGET)
+        full_push(gh, "main", "message", {"a": b"A"}, target_repo=TARGET)
 
 
 def test_publish_branch_refuses_an_empty_deployment():
     with pytest.raises(PublishError, match="empty"):
-        full_push(FakeGitHub(), "main", "owner/wf", REF, {}, target_repo=TARGET)
+        full_push(FakeGitHub(), "main", "message", {}, target_repo=TARGET)
 
 
 def test_valid_branch_follows_git_rules():
@@ -148,3 +191,21 @@ def test_valid_branch_follows_git_rules():
         "x//y",
     ):
         assert not valid_branch(bad)
+
+
+def test_push_deployment_collects_files_and_pushes():
+    fs = DeploymentFS({"a.txt": b"A"}, schemas=None)  # type: ignore
+    gh = FakeGitHub({"main": "old-sha"})
+
+    result = push_deployment(
+        fs,
+        gh,
+        name="me/work-flow",
+        target_repo=TARGET,
+        branch="main",
+        message="message",
+        expected_sha="old-sha",
+    )
+
+    assert result == "commit"
+    assert ("ref-update", "me/work-flow", "main", "commit") in gh.calls

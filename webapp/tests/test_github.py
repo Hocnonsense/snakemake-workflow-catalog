@@ -47,7 +47,7 @@ def test_commit_files_initializes_an_empty_repository_through_the_contents_api()
         (
             "PUT",
             "https://api.github.com/repos/me/target/contents/a.txt",
-            {"message": "msg", "content": "aGk="},
+            {"message": "msg", "content": "aGk=", "branch": "main"},
         )
     ]
 
@@ -81,18 +81,18 @@ def test_commit_files_adds_remaining_files_on_top_of_the_initial_commit():
     assert ref[2] == {"sha": "commit-sha"}
 
 
-def test_commit_files_creates_a_ref_for_a_non_default_branch():
+def test_commit_files_initializes_on_the_requested_branch():
     gh = RecordingGitHub()
-    sha = gh.commit_files(
-        "me/target", "feature", {"a.txt": b"hi"}, "msg", default_branch="main"
-    )
+    sha = gh.commit_files("me/target", "feature", {"a.txt": b"hi"}, "msg")
 
     assert sha == "init-sha"
-    assert gh.calls[-1] == (
-        "POST",
-        "https://api.github.com/repos/me/target/git/refs",
-        {"ref": "refs/heads/feature", "sha": "init-sha"},
-    )
+    assert gh.calls == [
+        (
+            "PUT",
+            "https://api.github.com/repos/me/target/contents/a.txt",
+            {"message": "msg", "content": "aGk=", "branch": "feature"},
+        )
+    ]
 
 
 def test_create_repo_payload():
@@ -294,3 +294,36 @@ def test_network_errors_are_wrapped(monkeypatch):
 
     with pytest.raises(GitHubError):
         gh.current_user()
+
+
+class BranchGitHub(GitHub):
+    def __init__(self, *, missing=False, truncated=False):
+        super().__init__("token")
+        self.missing = missing
+        self.truncated = truncated
+
+    def get_ref_sha(self, owner_repo, branch):
+        return None if self.missing else "sha1"
+
+    def get_tree(self, owner_repo, ref):
+        if self.truncated:
+            return {"truncated": True, "tree": []}
+        return {"tree": [{"path": "a.txt", "type": "blob"}]}
+
+    def fetch_files(self, owner_repo, ref, files):
+        return {path: b"data" for path in files}
+
+
+def test_pull_files_returns_the_branch_head_and_blobs():
+    assert BranchGitHub().pull_files("me/wf", "main") == (
+        "sha1",
+        {"a.txt": b"data"},
+    )
+
+
+def test_pull_files_rejects_a_missing_branch_and_truncated_tree():
+    with pytest.raises(GitHubError, match="does not exist"):
+        BranchGitHub(missing=True).pull_files("me/wf", "main")
+
+    with pytest.raises(GitHubError, match="truncated"):
+        BranchGitHub(truncated=True).pull_files("me/wf", "main")

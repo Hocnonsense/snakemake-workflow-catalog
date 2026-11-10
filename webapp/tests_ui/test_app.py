@@ -11,7 +11,6 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from catalog_webapp.github import GitHub, GitHubError  # noqa: E402
-from catalog_webapp.publish import PublishError  # noqa: E402
 from snakelit.types import Ref  # noqa: E402
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
@@ -232,7 +231,10 @@ def test_submit_form_appears_once_a_token_is_connected(app):
     assert app.selectbox(key="publish-branch-me").options == ["main"]
     push = next(item for item in app.button if item.label == "Push")
     assert not push.disabled
-    assert any("will create a new repo me/wf" in item.value for item in app.caption)
+    assert any(
+        "will create a new repo" in item.value and "me/wf" in item.value
+        for item in app.caption
+    )
 
 
 def test_submit_refuses_another_owners_missing_repository(app):
@@ -275,5 +277,91 @@ def test_push_creates_the_repository_and_reports_it(app, monkeypatch):
     app.run()
 
     assert not app.exception
-    assert app.session_state["publish-url"] == "https://github.com/me/wf"
-    assert "Open repository" in [item.value for item in app.get("link_button")]
+
+
+def test_pull_compares_incoming_files(app, monkeypatch):
+    monkeypatch.setattr(
+        GitHub,
+        "get_repo",
+        lambda self, name: {
+            "full_name": "me/wf",
+            "default_branch": "main",
+            "html_url": "https://github.com/me/wf",
+        },
+    )
+    monkeypatch.setattr(
+        GitHub,
+        "iter_branches",
+        lambda self, name: [Ref("branch", "main", "old-sha")],
+    )
+    app.session_state["gh-token"] = "token"
+    app.session_state["gh-login"] = "me"
+    next(item for item in app.button if item.label == "Deploy").click()
+    app.run()
+    next(item for item in app.button if item.label == "Submit to GitHub").click()
+    app.run()
+
+    fs = app.session_state["deploy-result"]["explorer"].store
+    incoming = {path: fs.read(path) for path in fs.paths()}
+    incoming["config/config.yaml"] = b"samples: pulled.tsv\n"
+    monkeypatch.setattr(
+        "catalog_webapp.github.GitHub.pull_files",
+        lambda self, full_name, branch: ("old-sha", incoming),
+    )
+
+    next(item for item in app.button if item.label == "Pull").click()
+    app.run()
+
+    assert not app.exception
+    head, pending = app.session_state["merge"]
+    assert head == ("me/wf", "main", "old-sha")
+    assert pending == {"config/config.yaml": b"samples: pulled.tsv\n"}
+    labels = [item.label for item in app.button]
+    assert "Apply" in labels
+    assert "Finish" in labels
+
+
+def test_merge_done_pushes_the_pulled_sha(app, monkeypatch):
+    monkeypatch.setattr(
+        GitHub,
+        "get_repo",
+        lambda self, name: {
+            "full_name": "me/wf",
+            "default_branch": "main",
+            "html_url": "https://github.com/me/wf",
+        },
+    )
+    monkeypatch.setattr(
+        GitHub,
+        "iter_branches",
+        lambda self, name: [Ref("branch", "main", "old-sha")],
+    )
+    app.session_state["gh-token"] = "token"
+    app.session_state["gh-login"] = "me"
+    next(item for item in app.button if item.label == "Deploy").click()
+    app.run()
+
+    app.session_state["merge"] = (
+        ("me/wf", "main", "old-sha"),
+        {"config/config.yaml": b"samples: pulled.tsv\n"},
+    )
+    app.run()
+
+    next(item for item in app.button if item.label == "Finish").click()
+    app.run()
+    assert app.session_state["merge"][1] == {}
+
+    calls = {}
+
+    def fake_push(*args, **kwargs):
+        calls.update(kwargs)
+        return "commit"
+
+    monkeypatch.setattr("catalog_webapp.publish.full_push", fake_push)
+    next(item for item in app.button if item.label == "Submit to GitHub").click()
+    app.run()
+    next(item for item in app.button if item.label == "Push").click()
+    app.run()
+
+    assert calls["expected_sha"] == "old-sha"
+    assert app.session_state.get("merge") is None
