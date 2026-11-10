@@ -10,7 +10,8 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from catalog_webapp.github import GitHub  # noqa: E402
+from catalog_webapp.github import GitHub, GitHubError  # noqa: E402
+from catalog_webapp.publish import PublishError  # noqa: E402
 from snakelit.types import Ref  # noqa: E402
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
@@ -65,6 +66,11 @@ def _start(tmp_path, monkeypatch, files):
         GitHub,
         "fetch_files",
         lambda self, repo, ref, paths: {path: files[path] for path in paths},
+    )
+    monkeypatch.setattr(
+        GitHub,
+        "get_repo",
+        lambda self, owner_repo: (_ for _ in ()).throw(GitHubError(404, "Not Found")),
     )
 
     at = AppTest.from_file(str(APP), default_timeout=60)
@@ -201,3 +207,73 @@ def test_create_file_from_a_config_value(app):
     next(item for item in app.button if item.label == "Browse deployed files").click()
     app.run()
     assert "notes.txt" in [item.label for item in app.button]
+
+
+def test_prepare_download_builds_the_zip_on_click(app):
+    next(item for item in app.button if item.label == "Deploy").click()
+    app.run()
+    next(item for item in app.button if item.label == "Prepare download").click()
+    app.run()
+
+    assert [item.label for item in app.get("download_button")] == ["Download zip"]
+    assert not [item for item in app.button if item.label == "Prepare download"]
+
+
+def test_submit_form_appears_once_a_token_is_connected(app):
+    app.session_state["gh-token"] = "token"
+    app.session_state["gh-login"] = "me"
+    next(item for item in app.button if item.label == "Deploy").click()
+    app.run()
+
+    next(item for item in app.button if item.label == "Submit to GitHub").click()
+    app.run()
+
+    assert app.text_input(key="publish-repo").value == ""
+    assert app.selectbox(key="publish-branch-me").options == ["main"]
+    push = next(item for item in app.button if item.label == "Push")
+    assert not push.disabled
+    assert any("will create a new repo me/wf" in item.value for item in app.caption)
+
+
+def test_submit_refuses_another_owners_missing_repository(app):
+    app.session_state["gh-token"] = "token"
+    app.session_state["gh-login"] = "me"
+    next(item for item in app.button if item.label == "Deploy").click()
+    app.run()
+    next(item for item in app.button if item.label == "Submit to GitHub").click()
+    app.run()
+
+    app.text_input(key="publish-repo").set_value("org/wf")
+    app.run()
+
+    assert any("does not exist" in item.value for item in app.error)
+    assert not [item for item in app.button if item.label == "Push"]
+
+
+def test_push_creates_the_repository_and_reports_it(app, monkeypatch):
+    monkeypatch.setattr(
+        GitHub,
+        "create_repo",
+        lambda self, name, **kwargs: {
+            "full_name": f"me/{name}",
+            "default_branch": "main",
+            "html_url": "https://github.com/me/wf",
+        },
+    )
+    monkeypatch.setattr(
+        "catalog_webapp.publish.full_push",
+        lambda *args, **kwargs: "https://github.com/me/wf",
+    )
+    app.session_state["gh-token"] = "token"
+    app.session_state["gh-login"] = "me"
+    next(item for item in app.button if item.label == "Deploy").click()
+    app.run()
+    next(item for item in app.button if item.label == "Submit to GitHub").click()
+    app.run()
+
+    next(item for item in app.button if item.label == "Push").click()
+    app.run()
+
+    assert not app.exception
+    assert app.session_state["publish-url"] == "https://github.com/me/wf"
+    assert "Open repository" in [item.value for item in app.get("link_button")]

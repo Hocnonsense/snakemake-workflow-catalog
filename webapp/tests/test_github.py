@@ -21,6 +21,8 @@ class RecordingGitHub(GitHub):
 
     def _json(self, method, url, payload=None):
         self.calls.append((method, url, payload))
+        if "/contents/" in url:
+            return {"commit": {"sha": "init-sha", "tree": {"sha": "init-tree"}}}
         if url.endswith("/git/blobs"):
             return {"sha": "blob-sha"}
         if url.endswith("/git/trees"):
@@ -29,36 +31,68 @@ class RecordingGitHub(GitHub):
             return {"sha": "commit-sha"}
         if url.endswith("/git/refs") and payload:
             return {"ref": payload["ref"], "object": {"sha": payload["sha"]}}
+        if "/git/refs/heads/" in url and payload:
+            return {"object": {"sha": payload["sha"]}}
         if url.endswith("/user/repos"):
             return {"full_name": "me/target", "default_branch": "main"}
         raise AssertionError(f"unexpected URL: {url}")
 
 
-def test_commit_files_creates_blob_tree_commit_and_ref():
+def test_commit_files_initializes_an_empty_repository_through_the_contents_api():
     gh = RecordingGitHub()
     sha = gh.commit_files("me/target", "main", {"a.txt": b"hi"}, "msg")
 
-    assert sha == "commit-sha"
-    kinds = [call[1].rsplit("/", 1)[-1].split("?")[0] for call in gh.calls]
-    assert kinds[:2] == ["blobs", "trees"]
-    assert kinds[2:] == ["commits", "refs"]
-
-    blob_payload = gh.calls[0][2]
-    assert blob_payload["encoding"] == "base64"
-    assert blob_payload["content"] == "aGk="
-
-    tree_payload = gh.calls[1][2]
-    assert tree_payload["tree"] == [
-        {"path": "a.txt", "mode": "100644", "type": "blob", "sha": "blob-sha"}
+    assert sha == "init-sha"
+    assert gh.calls == [
+        (
+            "PUT",
+            "https://api.github.com/repos/me/target/contents/a.txt",
+            {"message": "msg", "content": "aGk="},
+        )
     ]
 
-    commit_payload = gh.calls[2][2]
-    assert commit_payload["parents"] == []
+
+def test_commit_files_adds_remaining_files_on_top_of_the_initial_commit():
+    gh = RecordingGitHub()
+    sha = gh.commit_files("me/target", "main", {"a.txt": b"hi", "b.txt": b"bye"}, "msg")
+
+    assert sha == "commit-sha"
+    assert gh.calls[0][0] == "PUT"
+    assert gh.calls[0][1].endswith("/contents/a.txt")
+
+    blob_payload = gh.calls[1][2]
+    assert blob_payload["encoding"] == "base64"
+    assert blob_payload["content"] == "Ynll"
+    assert gh.calls[1][1].endswith("/git/blobs")
+
+    tree_payload = gh.calls[2][2]
+    assert tree_payload["base_tree"] == "init-tree"
+    assert tree_payload["tree"] == [
+        {"path": "b.txt", "mode": "100644", "type": "blob", "sha": "blob-sha"}
+    ]
+
+    commit_payload = gh.calls[3][2]
+    assert commit_payload["parents"] == ["init-sha"]
     assert commit_payload["tree"] == "tree-sha"
 
-    ref_payload = gh.calls[3][2]
-    assert ref_payload["ref"] == "refs/heads/main"
-    assert ref_payload["sha"] == "commit-sha"
+    ref = gh.calls[4]
+    assert ref[0] == "PATCH"
+    assert ref[1].endswith("/git/refs/heads/main")
+    assert ref[2] == {"sha": "commit-sha"}
+
+
+def test_commit_files_creates_a_ref_for_a_non_default_branch():
+    gh = RecordingGitHub()
+    sha = gh.commit_files(
+        "me/target", "feature", {"a.txt": b"hi"}, "msg", default_branch="main"
+    )
+
+    assert sha == "init-sha"
+    assert gh.calls[-1] == (
+        "POST",
+        "https://api.github.com/repos/me/target/git/refs",
+        {"ref": "refs/heads/feature", "sha": "init-sha"},
+    )
 
 
 def test_create_repo_payload():

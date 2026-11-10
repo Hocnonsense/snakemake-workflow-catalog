@@ -11,10 +11,13 @@ from snakelit.types import Ref
 from snakelit.version_picker import version_picker
 from snakelit.edit import edit_for
 from snakelit.file_explorer import FileExplorer
+from snakelit.utils.ui_components import toggle_button
 from catalog_webapp.auth import render_auth
 from catalog_webapp.deploy import DeployError, deploy
 from catalog_webapp.fs import DeploymentFS
 from catalog_webapp.github import GitHub, GitHubError
+from catalog_webapp.publish import publish_form, zip_bytes
+from catalog_webapp.stlite import flush_spinner
 
 st.set_page_config(page_title="Deploy a Snakemake workflow", layout="wide")
 
@@ -29,7 +32,7 @@ def _bootstrap() -> dict:
 
 
 bootstrap = _bootstrap()
-repo = bootstrap.get("repo", "")
+repo: str = bootstrap.get("repo", "")
 ref = bootstrap.get("ref", "")
 
 if repo:
@@ -57,6 +60,7 @@ if ref is None:
 def _run_deploy(gh: GitHub, repo: str, ref: Ref):
     """Deploy inside the click callback so the app is busy while fetching."""
     with st.spinner("Deploying workflow..."):
+        flush_spinner()
         try:
             deployment = deploy(repo, ref, gh)
         except (GitHubError, DeployError) as error:
@@ -102,3 +106,40 @@ fs: DeploymentFS = explorer.store
 explorer.render(header="Browse deployed files")
 
 edit_for(fs.config_file(), fs, key=f"config-{key}", editors=fs.editors)
+
+st.divider()
+download_col, publish_col = st.columns(2)
+with download_col:
+    file_name = (
+        f"{repo.replace('/', '-')}-{(ref.sha[:7] or ref.name).replace('/', '-')}.zip"
+    )
+    slot = st.empty()
+    if slot.button(
+        "Prepare download",
+        key="prepare-download",
+        width="stretch",
+        help="Build the archive and replace this button with the download.",
+    ):
+        slot.empty()
+        with slot:
+            st.download_button(
+                "Download zip",
+                data=zip_bytes(fs),
+                file_name=file_name,
+                mime="application/zip",
+                width="stretch",
+            )
+with publish_col:
+    open_github = toggle_button(
+        "Submit to GitHub",
+        key="publish-toggle",
+        width="stretch",
+        disabled=not gh.token,
+        help=(
+            None
+            if gh.token
+            else "Connect a personal access token in the sidebar to submit."
+        ),
+    )
+if gh.token and open_github:
+    publish_form(fs, gh, repo, ref)

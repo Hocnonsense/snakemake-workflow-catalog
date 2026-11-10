@@ -321,49 +321,132 @@ class GitHub:
             },
         )
 
+    def create_file(
+        self,
+        owner_repo: str,
+        path: str,
+        content: bytes,
+        message: str,
+        branch: str | None = None,
+    ) -> dict:
+        """Create one file through the contents API.
+
+        Unlike the git database API, this endpoint also works on an empty
+        repository and initializes it with a first commit.
+        """
+        quoted = urllib.parse.quote(path, safe="/")
+        payload: dict = {
+            "message": message,
+            "content": base64.b64encode(content).decode("ascii"),
+        }
+        if branch:
+            payload["branch"] = branch
+        return self._json("PUT", f"{API}/repos/{owner_repo}/contents/{quoted}", payload)
+
     def commit_files(
         self,
         owner_repo: str,
         branch: str,
         files: Mapping[str, bytes],
         message: str,
+        *,
+        default_branch: str = "main",
     ) -> str:
-        """Create an initial commit on ``branch`` and return its sha."""
-        tree_entries = []
-        for path, content in files.items():
-            blob = self._json(
-                "POST",
-                f"{API}/repos/{owner_repo}/git/blobs",
-                {
-                    "content": base64.b64encode(content).decode("ascii"),
-                    "encoding": "base64",
-                },
-            )
-            tree_entries.append(
+        """Create the first commit of an empty repository and return its sha.
+
+        The git database API answers 409 (``Git Repository is empty``) until
+        the repository has a commit, so the first file is written through the
+        contents API to initialize it; the remaining files are added on top.
+        A ref is created when ``branch`` is not the repository's default
+        branch; the caller decides whether it also becomes the default.
+        """
+        paths = sorted(files)
+        initialized = self.create_file(owner_repo, paths[0], files[paths[0]], message)
+        head = initialized["commit"]["sha"]
+        if len(paths) > 1:
+            entries = [
                 {
                     "path": path,
                     "mode": "100644",
                     "type": "blob",
-                    "sha": blob["sha"],
+                    "sha": self.create_blob(owner_repo, files[path]),
                 }
+                for path in paths[1:]
+            ]
+            tree = self.create_tree(
+                owner_repo, entries, initialized["commit"]["tree"]["sha"]
             )
-        tree = self._json(
+            head = self.create_commit(owner_repo, message, tree, head)
+            # The contents API created the default branch; move it to the
+            # complete tree even when publishing to a separate branch.
+            self.update_ref(owner_repo, default_branch, head)
+        if branch != default_branch:
+            self.create_ref(owner_repo, branch, head)
+        return head
+
+    def get_ref_sha(self, owner_repo: str, branch: str):
+        """The commit a branch points at, or ``None`` when it does not exist.
+
+        An empty repository has no refs at all and GitHub answers 409
+        (``Git Repository is empty``) instead of 404 for the git data API.
+        """
+        quoted = urllib.parse.quote(f"heads/{branch}", safe="/")
+        try:
+            data = self._json("GET", f"{API}/repos/{owner_repo}/git/ref/{quoted}")
+        except GitHubError as error:
+            if error.status in (404, 409):
+                return None
+            raise
+        return data["object"]["sha"]
+
+    def create_blob(self, owner_repo: str, content: bytes) -> str:
+        data = self._json(
             "POST",
-            f"{API}/repos/{owner_repo}/git/trees",
-            {"tree": tree_entries},
+            f"{API}/repos/{owner_repo}/git/blobs",
+            {
+                "content": base64.b64encode(content).decode("ascii"),
+                "encoding": "base64",
+            },
         )
-        commit = self._json(
+        return data["sha"]
+
+    def create_tree(
+        self, owner_repo: str, entries: list, base_tree: str | None = None
+    ) -> str:
+        payload: dict = {"tree": entries}
+        if base_tree:
+            payload["base_tree"] = base_tree
+        data = self._json("POST", f"{API}/repos/{owner_repo}/git/trees", payload)
+        return data["sha"]
+
+    def create_commit(
+        self, owner_repo: str, message: str, tree: str, parent: str | None = None
+    ) -> str:
+        data = self._json(
             "POST",
             f"{API}/repos/{owner_repo}/git/commits",
             {
                 "message": message,
-                "tree": tree["sha"],
-                "parents": [],
+                "tree": tree,
+                "parents": [parent] if parent else [],
             },
         )
+        return data["sha"]
+
+    def create_ref(self, owner_repo: str, branch: str, sha: str):
         self._json(
             "POST",
             f"{API}/repos/{owner_repo}/git/refs",
-            {"ref": f"refs/heads/{branch}", "sha": commit["sha"]},
+            {"ref": f"refs/heads/{branch}", "sha": sha},
         )
-        return commit["sha"]
+
+    def update_ref(self, owner_repo: str, branch: str, sha: str):
+        quoted = urllib.parse.quote(f"heads/{branch}", safe="/")
+        self._json(
+            "PATCH",
+            f"{API}/repos/{owner_repo}/git/refs/{quoted}",
+            {"sha": sha},
+        )
+
+    def set_default_branch(self, owner_repo: str, branch: str):
+        self._json("PATCH", f"{API}/repos/{owner_repo}", {"default_branch": branch})
