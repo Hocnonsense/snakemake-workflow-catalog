@@ -108,38 +108,30 @@ explorer.render(header="Browse deployed files")
 edit_for(fs.config_file(), fs, key=f"config-{key}", editors=fs.editors)
 
 st.divider()
-download_col, publish_col = st.columns(2)
-with download_col:
-    file_name = (
-        f"{repo.replace('/', '-')}-{(ref.sha[:7] or ref.name).replace('/', '-')}.zip"
-    )
-    slot = st.empty()
-    if slot.button(
-        "Prepare download",
-        key="prepare-download",
+download_col, publish_col = [i.empty() for i in st.columns(2)]
+
+file_name = (
+    f"{repo.replace('/', '-')}-{(ref.sha[:7] or ref.name).replace('/', '-')}.zip"
+)
+if download_col.button(
+    "Prepare download",
+    key="prepare-download",
+    width="stretch",
+    help="Build the archive and replace this button with the download.",
+):
+    download_col.empty()
+    download_col.download_button(
+        "Download zip",
+        data=zip_bytes(fs),
+        file_name=file_name,
+        mime="application/zip",
         width="stretch",
-        help="Build the archive and replace this button with the download.",
-    ):
-        slot.empty()
-        with slot:
-            st.download_button(
-                "Download zip",
-                data=zip_bytes(fs),
-                file_name=file_name,
-                mime="application/zip",
-                width="stretch",
-            )
-with publish_col:
-    open_github = toggle_button(
-        "Submit to GitHub",
-        key="publish-toggle",
-        width="stretch",
-        disabled=not gh.token,
-        help=(
-            None
-            if gh.token
-            else "Connect a personal access token in the sidebar to submit."
-        ),
     )
-if gh.token and open_github:
-    publish_form(fs, gh, repo, ref)
+if publish_col.button(
+    "Submit to GitHub",
+    key="github-publish",
+    width="stretch",
+    disabled=not gh.token,
+    help="Connect with a personal access token in the sidebar.",
+):
+    publish_form(fs, gh, repo, ref, publish_col)

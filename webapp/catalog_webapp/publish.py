@@ -117,7 +117,7 @@ def _entries(gh: GitHub, full_name: str, files: dict):
     ]
 
 
-def publish_form(fs: DeploymentFS, gh: GitHub, repo: str, ref: Ref):
+def publish_form(fs: DeploymentFS, gh: GitHub, repo: str, ref: Ref, slot):
     import streamlit as st
     from snakelit.utils.ui_components import persistent_text_input
 
@@ -127,8 +127,7 @@ def publish_form(fs: DeploymentFS, gh: GitHub, repo: str, ref: Ref):
     #    user = gh.current_user()["login"]
     if not user or not gh.token:
         return
-    input_col, button_col = st.columns([4, 1], vertical_alignment="top")
-    repo_col, branch_col = input_col.columns([1, 1], vertical_alignment="top")
+    repo_col, branch_col = st.columns([2, 2], vertical_alignment="bottom")
     with repo_col:
         default_name = repo_name(repo.rsplit("/", 1)[-1], user) or ""
         raw_name = (
@@ -180,19 +179,21 @@ def publish_form(fs: DeploymentFS, gh: GitHub, repo: str, ref: Ref):
             accept_new_options=True,
         )
     if not branch:
-        input_col.caption(caption + ".")
+        st.caption(caption + ".")
         return st.error("Please provide or specify a branch name.")
     if not valid_branch(branch):
-        input_col.caption(caption + ".")
+        st.caption(caption + ".")
         return st.error(f"Invalid branch name: {branch!r}.")
     if branch in branches:
-        input_col.caption(
+        st.caption(
             caption + " and overwrite existing content of branch " + branch + "."
         )
     else:
-        input_col.caption(caption + " and create new branch " + branch + ".")
+        st.caption(caption + " and create new branch " + branch + ".")
 
-    with button_col:
+    slot.empty()
+    push_col, pull_col = slot.columns([1, 1])
+    with push_col:
         if st.session_state.get("publish-target") != (user, name, branch):
             st.session_state["publish-target"] = (user, name, branch)
             st.session_state.pop("publish-error", None)
