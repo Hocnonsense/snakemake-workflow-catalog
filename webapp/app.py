@@ -56,20 +56,23 @@ if ref is None:
 
 def _run_deploy(gh: GitHub, repo: str, ref: Ref):
     """Deploy inside the click callback so the app is busy while fetching."""
-    try:
-        deployment = deploy(repo, ref, gh)
-    except (GitHubError, DeployError) as error:
-        st.session_state["deploy-error"] = str(error)
-        st.session_state.pop("deploy-result", None)
-    else:
-        result_key = f"{repo}@{ref.sha}"
-        explorer = FileExplorer(key=f"file-view-{result_key}", store=deployment)
-        deployment.set_file_editors(partial(explorer.change_preview, args=("edit",)))
-        st.session_state["deploy-result"] = {
-            "key": result_key,
-            "explorer": explorer,
-        }
-        st.session_state.pop("deploy-error", None)
+    with st.spinner("Deploying workflow..."):
+        try:
+            deployment = deploy(repo, ref, gh)
+        except (GitHubError, DeployError) as error:
+            st.session_state["deploy-error"] = str(error)
+            st.session_state.pop("deploy-result", None)
+        else:
+            result_key = f"{repo}@{ref.sha}"
+            explorer = FileExplorer(key=f"file-view-{result_key}", store=deployment)
+            deployment.set_file_editors(
+                partial(explorer.change_preview, args=("edit",))
+            )
+            st.session_state["deploy-result"] = {
+                "key": result_key,
+                "explorer": explorer,
+            }
+            st.session_state.pop("deploy-error", None)
 
 
 st.button(
