@@ -14,16 +14,23 @@ from pathlib import Path
 import json
 import shutil
 
+import snakelit
+
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "webapp"
+PACKAGE = Path(snakelit.__file__).resolve().parent
 
 
 def python_files():
-    for path, dirs, files in SOURCE.walk():
+    """Yield ``(source, relative)`` for every Python file in the bundle."""
+    for path, dirs, files in SOURCE.walk(follow_symlinks=True):
         dirs[:] = [d for d in dirs if d not in ("__pycache__", "tests", "tests_ui")]
         for file in files:
             if file.endswith(".py"):
-                yield (path / file).relative_to(SOURCE).as_posix()
+                source = path / file
+                yield source, source.relative_to(SOURCE).as_posix()
+    for source in sorted(PACKAGE.rglob("*.py")):
+        yield source, (Path("snakelit") / source.relative_to(PACKAGE)).as_posix()
 
 
 def copy_webapp(target: Path):
@@ -32,11 +39,13 @@ def copy_webapp(target: Path):
     target.mkdir(parents=True)
     shutil.copy2(SOURCE / "index.html", target / "index.html")
 
-    paths = sorted(python_files())
-    for relative in paths:
+    entries = sorted(python_files(), key=lambda entry: entry[1])
+    paths = []
+    for source, relative in entries:
         destination = target / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(SOURCE / relative, destination)
+        shutil.copy2(source, destination)
+        paths.append(relative)
 
     (target / "files.json").write_text(
         json.dumps(paths, indent=2) + "\n", encoding="utf-8"

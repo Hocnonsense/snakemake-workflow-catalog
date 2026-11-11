@@ -45,19 +45,23 @@ test-generate-catalog-single-repo = { cmd = "python scripts/generate-catalog.py"
 test-cleanup-catalog = { cmd = "python scripts/cleanup-catalog.py", env = { OFFSET = "0", N_REPOS = "3" } }
 generate-catalog = { cmd = "python scripts/generate-catalog.py" }
 cleanup-catalog = { cmd = "python scripts/cleanup-catalog.py" }
-render-catalog = "python scripts/build-webapp.py && sphinx-build source build/html"
+render-catalog = "pixi run -e webapp build-webapp && sphinx-build source build/html"
 
 [feature.webapp.dependencies]
 python = ">=3.13,<3.14"
-streamlit = ">=1.40,<2"
+streamlit = ">=1.55,<2"
 pyyaml = ">=6,<7"
 jsonschema = ">=4,<5"
 pytest = ">=8,<9"
 polars = ">=2,<3"
 
+[feature.webapp.pypi-dependencies]
+snakelit = ">=0.1.0,<1"
+
 [feature.webapp.tasks]
 test-webapp = "pytest webapp/tests -v"
 test-webapp-ui = "pytest webapp/tests_ui -v"
+build-webapp = "python scripts/build-webapp.py"
 
 [environments]
 webapp = { features = ["webapp"], no-default-feature = true }
