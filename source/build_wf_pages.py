@@ -1,9 +1,15 @@
 import json
+import os
 import re
+import urllib.parse
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from datetime import datetime
 from pathlib import Path
 import subprocess as sp
+
+WEBAPP_URL = os.environ.get(
+    "CATALOG_WEBAPP_URL", "https://hocnonsense.github.io/snakemake-deploy-webapp/"
+)
 
 
 def check_readme(readme):
@@ -200,6 +206,10 @@ def build_wf_pages():
         wf_data["linting"] = check_qc_output(repo["linting"])
         wf_data["formatting"] = check_qc_output(repo["formatting"])
         wf_data["release"] = repo["latest_release"]
+        query = "?repo=" + urllib.parse.quote(current_repo, safe="/")
+        if repo.get("latest_release"):
+            query += "&ref=" + urllib.parse.quote(repo["latest_release"], safe="")
+        wf_data["webapp_url"] = WEBAPP_URL + query
         wf_data["rulegraph"] = plots
         last_update = datetime.fromtimestamp(repo["updated_at"])
         wf_data["last_update"] = datetime.strftime(last_update, "%Y-%m-%d")
