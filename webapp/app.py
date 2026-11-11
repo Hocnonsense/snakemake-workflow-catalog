@@ -165,10 +165,6 @@ if files:
         label = f"{repo}@{branch}" + (f" ({sha[:7]})" if sha else "")
     else:
         label = f"upload {head}" if head else "upload"
-    render_merge(
-        fs,
-        f"Merge {label}",
-        files,
-        base=fs.downloaded,
-        on_cancel=lambda: st.session_state.pop("merge", None),
-    )
+    if render_merge(fs, f"Merge {label}", files) is None:
+        st.session_state.pop("merge", None)
+        st.rerun()

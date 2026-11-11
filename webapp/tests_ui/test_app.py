@@ -435,3 +435,43 @@ def test_upload_invalid_zip_reports_an_error(app):
         "The uploaded file is not a valid zip archive."
     ]
     assert "merge" not in app.session_state
+
+
+def test_cancel_comparison_clears_the_merge(app, monkeypatch):
+    monkeypatch.setattr(
+        GitHub,
+        "get_repo",
+        lambda self, name: {
+            "full_name": "me/wf",
+            "default_branch": "main",
+            "html_url": "https://github.com/me/wf",
+        },
+    )
+    monkeypatch.setattr(
+        GitHub,
+        "iter_branches",
+        lambda self, name: [Ref("branch", "main", "old-sha")],
+    )
+    app.session_state["gh-token"] = "token"
+    app.session_state["gh-login"] = "me"
+    next(item for item in app.button if item.label == "Deploy").click()
+    app.run()
+    next(item for item in app.button if item.label == "Submit to GitHub").click()
+    app.run()
+
+    fs = app.session_state["deploy-result"]["explorer"].store
+    incoming = {path: fs.read(path) for path in fs.paths()}
+    incoming["config/config.yaml"] = b"samples: pulled.tsv\n"
+    monkeypatch.setattr(
+        "catalog_webapp.github.GitHub.pull_files",
+        lambda self, full_name, branch: ("old-sha", incoming),
+    )
+    next(item for item in app.button if item.label == "Pull").click()
+    app.run()
+
+    next(item for item in app.button if item.label == "Cancel comparison").click()
+    app.run()
+
+    assert not app.exception
+    assert "merge" not in app.session_state
+    assert not [item for item in app.button if item.label == "Apply"]
