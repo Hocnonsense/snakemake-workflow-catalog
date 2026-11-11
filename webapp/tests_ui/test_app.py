@@ -1,7 +1,9 @@
 """The page shows the repo/ref from bootstrap.json and offers token login."""
 
+import io
 import json
 import sys
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -46,6 +48,14 @@ FILES = {
     ),
     "LICENSE": b"MIT\n",
 }
+
+
+def _zip(files):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for path, content in files.items():
+            archive.writestr(path, content)
+    return buffer.getvalue()
 
 
 def _start(tmp_path, monkeypatch, files):
@@ -316,6 +326,7 @@ def test_pull_compares_incoming_files(app, monkeypatch):
     head, pending = app.session_state["merge"]
     assert head == ("me/wf", "main", "old-sha")
     assert pending == {"config/config.yaml": b"samples: pulled.tsv\n"}
+    assert any("Merge me/wf@main (old-sha)" in item.value for item in app.subheader)
     labels = [item.label for item in app.button]
     assert "Apply" in labels
     assert "Finish" in labels
@@ -365,3 +376,62 @@ def test_merge_done_pushes_the_pulled_sha(app, monkeypatch):
 
     assert calls["expected_sha"] == "old-sha"
     assert app.session_state.get("merge") is None
+
+
+def test_upload_zip_starts_a_merge(app):
+    next(item for item in app.button if item.label == "Deploy").click()
+    app.run()
+
+    deployment = app.session_state["deploy-result"]["explorer"].store
+    incoming = {path: deployment.read(path) for path in deployment.paths()}
+    incoming["config/config.yaml"] = b"samples: uploaded.tsv\n"
+
+    uploader = next(
+        item
+        for item in app.file_uploader
+        if item.key and item.key.endswith("-upload-files")
+    )
+    uploader.upload("uploaded.zip", _zip(incoming))
+    app.run()
+
+    upload = next(
+        item
+        for item in app.button
+        if item.key and item.key.endswith("-upload-zip-merge")
+    )
+    upload.click()
+    app.run()
+
+    assert not app.exception, [str(error.value) for error in app.exception]
+    head, pending = app.session_state["merge"]
+    assert head == "uploaded.zip"
+    assert pending == {"config/config.yaml": b"samples: uploaded.tsv\n"}
+    assert "uploaded.zip" not in deployment.paths()
+    assert any("Merge upload uploaded.zip" in item.value for item in app.subheader)
+
+
+def test_upload_invalid_zip_reports_an_error(app):
+    next(item for item in app.button if item.label == "Deploy").click()
+    app.run()
+
+    uploader = next(
+        item
+        for item in app.file_uploader
+        if item.key and item.key.endswith("-upload-files")
+    )
+    uploader.upload("broken.zip", b"not a zip")
+    app.run()
+
+    upload = next(
+        item
+        for item in app.button
+        if item.key and item.key.endswith("-upload-zip-merge")
+    )
+    upload.click()
+    app.run()
+
+    assert not app.exception, [str(error.value) for error in app.exception]
+    assert [item.value for item in app.error] == [
+        "The uploaded file is not a valid zip archive."
+    ]
+    assert "merge" not in app.session_state

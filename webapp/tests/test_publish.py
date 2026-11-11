@@ -17,9 +17,9 @@ from catalog_webapp.publish import (  # noqa: E402
     push_deployment,
     repo_name,
     valid_branch,
-    zip_bytes,
 )
 from snakelit.types import Ref  # noqa: E402
+from snakelit.utils.zip import zipped  # noqa: E402
 
 REF = Ref("tag", "v1.0", "abc1234def")
 TARGET = {
@@ -70,7 +70,7 @@ def test_zip_contains_deployed_files_with_overrides():
     fs.write("b/c.txt", b"C")
     fs.rm("gone.txt")
 
-    with zipfile.ZipFile(io.BytesIO(zip_bytes(fs))) as archive:
+    with zipfile.ZipFile(io.BytesIO(zipped(fs))) as archive:
         assert sorted(archive.namelist()) == ["a.txt", "b/c.txt"]
         assert archive.read("a.txt") == b"A"
         assert archive.read("b/c.txt") == b"C"

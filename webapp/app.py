@@ -11,12 +11,13 @@ from snakelit.types import Ref
 from snakelit.version_picker import version_picker
 from snakelit.edit import edit_for
 from snakelit.file_explorer import FileExplorer
+from snakelit.merge import diff_files, render_merge
+from snakelit.utils.zip import ArchiveError, unzip, zipped
 from catalog_webapp.auth import render_auth
 from catalog_webapp.deploy import DeployError, deploy
 from catalog_webapp.fs import DeploymentFS
 from catalog_webapp.github import GitHub, GitHubError
-from catalog_webapp.merge import diff_files, render_merge
-from catalog_webapp.publish import publish_form, zip_bytes
+from catalog_webapp.publish import publish_form
 from catalog_webapp.stlite import flush_spinner
 
 st.set_page_config(page_title="Deploy a Snakemake workflow", layout="wide")
@@ -57,6 +58,17 @@ if ref is None:
     raise NotImplementedError("Should stop by st")
 
 
+def start_zip_merge(fs: DeploymentFS, name: str, data: bytes):
+    """Compare an uploaded zip with ``fs``; return whether to rerun the page."""
+    try:
+        incoming = unzip(data)
+    except ArchiveError as error:
+        st.error(str(error))
+        return False
+    st.session_state["merge"] = (name, diff_files(fs, incoming))
+    return True
+
+
 def _run_deploy(gh: GitHub, repo: str, ref: Ref):
     """Deploy inside the click callback so the app is busy while fetching."""
     with st.spinner("Deploying workflow..."):
@@ -68,7 +80,11 @@ def _run_deploy(gh: GitHub, repo: str, ref: Ref):
             st.session_state.pop("deploy-result", None)
         else:
             result_key = f"{repo}@{ref.sha}"
-            explorer = FileExplorer(key=f"file-view-{result_key}", store=deployment)
+            explorer = FileExplorer(
+                key=f"file-view-{result_key}",
+                store=deployment,
+                on_zip=partial(start_zip_merge, deployment),
+            )
             deployment.set_file_editors(
                 partial(explorer.change_preview, args=("edit",))
             )
@@ -125,7 +141,7 @@ if download_col.button(
     download_col.empty()
     download_col.download_button(
         "Download zip",
-        data=zip_bytes(fs),
+        data=zipped(fs),
         file_name=file_name,
         mime="application/zip",
         width="stretch",
@@ -144,4 +160,15 @@ if st.session_state.get("publish-form-open"):
 
 head, files = st.session_state.get("merge", (None, {}))
 if files:
-    render_merge(fs, head, files)
+    if isinstance(head, tuple) and len(head) == 3:
+        repo, branch, sha = head
+        label = f"{repo}@{branch}" + (f" ({sha[:7]})" if sha else "")
+    else:
+        label = f"upload {head}" if head else "upload"
+    render_merge(
+        fs,
+        f"Merge {label}",
+        files,
+        base=fs.downloaded,
+        on_cancel=lambda: st.session_state.pop("merge", None),
+    )

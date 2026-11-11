@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import io
 import re
 import urllib.parse
-import zipfile
-
 
 from snakelit.types import Ref
 
@@ -35,17 +32,6 @@ def valid_branch(branch: str):
     if any(ord(ch) < 32 for ch in branch) or "//" in branch:
         return False
     return all(part and not part.endswith(".lock") for part in branch.split("/"))
-
-
-def zip_bytes(deployment: DeploymentFS):
-    """A zip of every deployed file; overrides win over the downloaded tree."""
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        for path in sorted(deployment.paths()):
-            content = deployment.read(path)
-            if content is not None:
-                archive.writestr(path, content)
-    return buffer.getvalue()
 
 
 def repo_name(repo: str, user: str | None = None):
