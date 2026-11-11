@@ -239,7 +239,6 @@ def publish_form(
                 "Could not create a new repository in another user's account."
             )
         caption = f"will create a new repo {name}"
-        repo_url = None
     else:
         repo_url = target.get("html_url") or f"https://github.com/{name}"
         caption = f"will push to [{name}]({repo_url})"
@@ -271,12 +270,16 @@ def publish_form(
     merge = st.session_state.get("merge")
     help = None
     if branch in heads:
-        if not merge or merge[0][:3] != (name, branch, heads.get(branch)):
-            help = "Pull this branch to compare it with the current deployment before pushing."
+        if not (
+            isinstance(merge, tuple)
+            and merge[0][:3] == (name, branch, heads.get(branch))
+        ):
+            help = (
+                "Pull this branch to compare it "
+                "with the current deployment before pushing."
+            )
         elif merge[1]:
             help = "Finish the merge below before pushing."
-        if repo_url is None:
-            return st.error("Impossible state with heads outside a repo")
         st.caption(
             f"{caption} and overwrite existing content of branch"
             f" [`{branch}`]({repo_url}/tree/{urllib.parse.quote(branch, safe='/')})."
@@ -284,57 +287,58 @@ def publish_form(
     else:
         st.caption(caption + f" and create new branch `{branch}`.")
 
-    with push_col:
-        if st.button(
-            "Push", key="publish", width="stretch", disabled=bool(help), help=help
-        ):
-            message = f"Deploy {repo}@{ref.name} with the Snakemake workflow catalog"
+    push_clicked = push_col.button(
+        "Push", key="publish", width="stretch", disabled=bool(help), help=help
+    )
+    pull_clicked = pull_col.button(
+        "Pull",
+        key="pull",
+        width="stretch",
+        disabled=target is None,
+        help="Fetch this branch and compare it with the current deployment.",
+    )
+
+    if push_clicked:
+        message = f"Deploy {repo}@{ref.name} with the Snakemake workflow catalog"
+        try:
+            with st.spinner("Publishing to GitHub...", width="stretch"):
+                flush_spinner()
+                commit = push_deployment(
+                    fs,
+                    gh,
+                    name=name,
+                    target_repo=target,
+                    branch=branch,
+                    message=message,
+                    expected_sha=heads.get(branch),
+                )
+            st.info(f"Published to {name}@{branch} as commit {commit}.")
+        except (GitHubError, PublishError) as error:
+            st.session_state["publish-error"] = str(error)
+        else:
+            st.session_state.pop("publish-error", None)
+            if merge:
+                st.session_state.pop("merge", None)
+        st.session_state.pop("publish-check", None)  # refresh repo and heads
+
+    elif pull_clicked:
+        if target is None:
+            st.session_state["publish-error"] = (
+                "Push this deployment to a repository before pulling."
+            )
+        else:
             try:
-                with slot.spinner("Publishing to GitHub..."):
+                with st.spinner("Pulling from GitHub...", width="stretch"):
                     flush_spinner()
-                    commit = push_deployment(
-                        fs,
-                        gh,
-                        name=name,
-                        target_repo=target,
-                        branch=branch,
-                        message=message,
-                        expected_sha=heads.get(branch),
+                    sha, incoming = gh.pull_files(target["full_name"], branch)
+                    st.session_state["merge"] = (
+                        (target["full_name"], branch, sha),
+                        diff_files(fs, incoming),
                     )
-                    slot.info(f"Published to {name}@{branch} as commit {commit}.")
-            except (GitHubError, PublishError) as error:
-                st.session_state["publish-error"] = str(error)
+            except GitHubError as error:
+                st.session_state["publish-error"] = f"Could not pull: {error}"
             else:
                 st.session_state.pop("publish-error", None)
-                if merge:
-                    st.session_state.pop("merge", None)
-            st.session_state.pop("publish-check", None)  # refresh repo and heads
-
-    with pull_col:
-        if st.button(
-            "Pull",
-            key="pull",
-            width="stretch",
-            disabled=target is None,
-            help="Fetch this branch and compare it with the current deployment.",
-        ):
-            if target is None:
-                st.session_state["publish-error"] = (
-                    "Push this deployment to a repository before pulling."
-                )
-            else:
-                try:
-                    with slot.spinner("Pulling from GitHub..."):
-                        flush_spinner()
-                        sha, incoming = gh.pull_files(target["full_name"], branch)
-                        st.session_state["merge"] = (
-                            (target["full_name"], branch, sha),
-                            diff_files(fs, incoming),
-                        )
-                except GitHubError as error:
-                    st.session_state["publish-error"] = f"Could not pull: {error}"
-                else:
-                    st.session_state.pop("publish-error", None)
 
     if st.session_state.get("publish-error"):
         st.error(st.session_state["publish-error"])
